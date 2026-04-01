@@ -1,0 +1,67 @@
+name: Deploy Practik Dashboard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  deploy:
+    name: Deploy to Production
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /root/projects/practik-dashboard
+
+            # Pull latest code
+            if [ ! -d .git ]; then
+              cd /root/projects
+              git clone ${{ secrets.REPO_URL }} practik-dashboard-tmp
+              cp practik-dashboard/.env practik-dashboard-tmp/ 2>/dev/null || true
+              cp practik-dashboard/practik.db practik-dashboard-tmp/ 2>/dev/null || true
+              rm -rf practik-dashboard
+              mv practik-dashboard-tmp practik-dashboard
+              cd practik-dashboard
+            else
+              git fetch origin main
+              git reset --hard origin/main
+            fi
+
+            cd /root/projects/practik-dashboard/frontend
+
+            # Install and build
+            npm ci --production=false
+            npm run build
+
+            # Restart service
+            sudo systemctl restart practik-dashboard
+            echo "✅ Deployed successfully"
+            sudo systemctl status practik-dashboard --no-pager

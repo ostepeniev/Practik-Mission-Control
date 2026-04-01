@@ -1,0 +1,17 @@
+[Unit]
+Description=Practik Dashboard (Next.js)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/projects/practik-dashboard
+ExecStart=/usr/bin/node node_modules/.bin/next start -p 3002
+Restart=on-failure
+RestartSec=10
+Environment=NODE_ENV=production
+Environment=PORT=3002
+EnvironmentFile=-/root/projects/practik-dashboard/.env.local
+
+[Install]
+WantedBy=multi-user.target

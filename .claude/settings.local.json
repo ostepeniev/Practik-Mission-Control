@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -r \"viewport\\\\|theme-color\\\\|apple\" 'd:\\\\Antigraviti\\\\Practik Dashboard\\\\frontend\\\\app' --include=*.js --include=*.jsx)"
+    ]
+  }
+}

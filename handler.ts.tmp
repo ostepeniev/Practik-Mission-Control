@@ -1,0 +1,189 @@
+/**
+ * Chater — Proxy Handler
+ * Handles BUSINESS MESSAGES from Telegram Premium
+ * 🔒 ISOLATED: All handlers wrapped in try-catch to prevent errors leaking to contacts
+ *
+ * Flow: Contact writes to Stepan → bot sees business_message → AI generates reply →
+ *       preview sent to admin (bot's DM) → admin approves → reply sent via business_connection
+ */
+import type { Bot } from "grammy";
+import { config } from "../../config.js";
+import {
+    handleContactMessage,
+    reformulate,
+    approveAndSend,
+} from "./service.js";
+import { proxyKeyboard, postSendKeyboard } from "./keyboards.js";
+import {
+    findPendingByAdminMessage,
+    updatePendingReply,
+    findContact,
+} from "../../db/index.js";
+import { esc } from "../../utils.js";
+
+/**
+ * Register all proxy handlers on the bot
+ */
+export function registerProxyHandlers(bot: Bot): void {
+    // ─── 1. Business messages from contacts (via Telegram Premium) ──────
+    bot.on("business_message:text", async (ctx) => {
+        // 🔒 Isolation: errors here never reach the contact
+        try {
+            const msg = ctx.update.business_message;
+            const chatId = msg.chat.id;
+            const text = msg.text;
+            const senderId = msg.from.id;
+            const businessConnectionId = ctx.update.business_message.business_connection_id;
+
+            // Ignore messages from admin (Stepan himself typing)
+            if (senderId === config.adminId) return;
+
+            const senderName = msg.from.first_name + (msg.from.last_name ? ` ${msg.from.last_name}` : "");
+            const senderUsername = msg.from.username;
+
+            console.log(`[Proxy] Business message from ${senderName} (chat: ${chatId}, conn: ${businessConnectionId})`);
+
+            // Send typing to admin
+            await ctx.api.sendChatAction(config.adminId, "typing");
+
+            const result = await handleContactMessage(chatId, text, senderName, senderUsername, businessConnectionId);
+
+            if (!result) {
+                await ctx.api.sendMessage(
+                    config.adminId,
+                    `⚠️ Не вдалось згенерувати відповідь для ${esc(senderName)}.\n💬 "${esc(text)}"`
+                );
+                return;
+            }
+
+            const { pending, contact, isNew } = result;
+
+            // Build and send preview to admin (regular message to bot's DM)
+            const who = contact.relationship ? `${esc(contact.display_name)} (${esc(contact.relationship)})` : esc(contact.display_name);
+            const previewText = [
+                `📨 <b>Нове повідомлення</b>`,
+                ``,
+                `👤 <b>Від:</b> ${who}`,
+                `💬 <i>"${esc(text)}"</i>`,
+                ``,
+                `───────`,
+                `🤖 <b>Пропоную:</b>`,
+                `"${esc(pending.suggested_reply)}"`,
+                ``,
+                `👇 <i>Натисни кнопку або напиши reply для правок</i>`,
+            ].join("\n");
+
+            const sentPreview = await ctx.api.sendMessage(config.adminId, previewText, {
+                parse_mode: "HTML",
+                reply_markup: proxyKeyboard(pending.id),
+            });
+
+            // Store admin message ID for mapping replies
+            await updatePendingReply(pending.id, { admin_message_id: sentPreview.message_id });
+
+            // If new contact — prompt admin for dossier info
+            if (isNew) {
+                const usernameStr = senderUsername ? ` (@${senderUsername})` : "";
+                await ctx.api.sendMessage(
+                    config.adminId,
+                    `🆕 <b>Новий контакт:</b> ${esc(contact.display_name)}${usernameStr}\nChat ID: <code>${chatId}</code>\n\nХочеш додати інфо? Використай /bind, /tone або надішли голосове.`,
+                    { parse_mode: "HTML" }
+                );
+            }
+        } catch (err) {
+            console.error("[Proxy] Error handling business message:", err);
+            try {
+                await ctx.api.sendMessage(
+                    config.adminId,
+                    `❌ Помилка proxy: ${err instanceof Error ? err.message : "невідома помилка"}`
+                );
+            } catch { /* silent */ }
+        }
+    });
+
+    // ─── 2. Admin reply to preview → reformulate ────────────────────────
+    bot.on("message:text", async (ctx, next) => {
+        const userId = ctx.from?.id;
+        if (!userId || userId !== config.adminId) return next();
+
+        const replyTo = ctx.message.reply_to_message;
+        if (!replyTo || replyTo.from?.id !== ctx.me.id) return next();
+
+        // Find pending reply by admin message ID
+        const pending = await findPendingByAdminMessage(replyTo.message_id);
+        if (!pending) return next();
+
+        try {
+            await ctx.reply("🔄 Переформульовую...");
+
+            const newReply = await reformulate(pending.id, ctx.message.text);
+
+            const contact = await findContact(pending.chat_id);
+            const contactName = contact?.display_name || "Контакт";
+
+            const msg = `🔄 *Переформульовано:*\n"${newReply}"\n\n👇 _Затвердити або виправити ще раз_`;
+
+            const sentMsg = await ctx.reply(msg, {
+                parse_mode: "Markdown",
+                reply_markup: proxyKeyboard(pending.id),
+            });
+
+            // Update mapping to new preview
+            await updatePendingReply(pending.id, { admin_message_id: sentMsg.message_id });
+        } catch (err) {
+            console.error("[Proxy] Reformulate failed:", err);
+            await ctx.reply(`❌ Помилка: ${err instanceof Error ? err.message : "невідома"}`);
+        }
+    });
+
+    // ─── 3. Callback: Send approved reply ───────────────────────────────
+    bot.callbackQuery(/^proxy:send:(\d+)$/, async (ctx) => {
+        const pendingId = parseInt(ctx.match![1]);
+
+        try {
+            await ctx.answerCallbackQuery("Надсилаю...");
+            await ctx.editMessageText("🚀 Надсилаю...");
+
+            await approveAndSend(bot, pendingId);
+
+            await ctx.editMessageText(
+                `✅ *Надіслано!*\n\nСтворити задачу або нагадування?`,
+                { parse_mode: "Markdown", reply_markup: postSendKeyboard(pendingId) }
+            );
+        } catch (err) {
+            console.error("[Proxy] Send failed:", err);
+            await ctx.editMessageText(`❌ Помилка: ${err instanceof Error ? err.message : "невідома"}`);
+        }
+    });
+
+    // ─── 4. Callback: Manual mode ───────────────────────────────────────
+    bot.callbackQuery(/^proxy:manual:(\d+)$/, async (ctx) => {
+        const pendingId = parseInt(ctx.match![1]);
+        await updatePendingReply(pendingId, { status: "manual" });
+
+        await ctx.answerCallbackQuery("Ок");
+        await ctx.editMessageText("👐 *Ручний режим.* Відповідай сам у чаті.", {
+            parse_mode: "Markdown",
+        });
+    });
+
+    // ─── 5. Post-send actions (placeholders) ────────────────────────────
+    bot.callbackQuery(/^proxy:task:(\d+)$/, async (ctx) => {
+        await ctx.answerCallbackQuery("🚧 Скоро...");
+        await ctx.editMessageText("📋 _Модуль задач буде додано пізніше_", { parse_mode: "Markdown" });
+    });
+
+    bot.callbackQuery(/^proxy:remind:(\d+)$/, async (ctx) => {
+        await ctx.answerCallbackQuery("🚧 Скоро...");
+        await ctx.editMessageText("⏰ _Модуль нагадувань буде додано пізніше_", { parse_mode: "Markdown" });
+    });
+
+    bot.callbackQuery(/^proxy:skip:(\d+)$/, async (ctx) => {
+        const pendingId = parseInt(ctx.match![1]);
+        await updatePendingReply(pendingId, { status: "skipped" });
+        await ctx.answerCallbackQuery("✔️");
+        await ctx.deleteMessage();
+    });
+
+    console.log("[Proxy] Handlers registered (business_message mode)");
+}
