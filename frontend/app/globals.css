@@ -2229,3 +2229,102 @@ select.filter-select:focus {
     right: -60px;
   }
 }
+
+/* ═══ HEATMAP (HR) ══════════════════════════════════════════ */
+.heatmap-grid {
+  overflow-x: auto;
+  padding: 8px 0;
+}
+.heatmap-header, .heatmap-row {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+.heatmap-header { margin-bottom: 2px; }
+.heatmap-label {
+  width: 32px;
+  min-width: 32px;
+  font-size: 0.7rem;
+  color: #94A3B8;
+  text-align: center;
+}
+.heatmap-cell-header {
+  flex: 1;
+  min-width: 40px;
+  font-size: 0.65rem;
+  color: #64748B;
+  text-align: center;
+}
+.heatmap-cell {
+  flex: 1;
+  min-width: 40px;
+  height: 32px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.9);
+  transition: transform 0.15s;
+  cursor: default;
+}
+.heatmap-cell:hover { transform: scale(1.15); z-index: 2; }
+
+/* ═══ SENTIMENT BAR (HR) ═══════════════════════════════════ */
+.sentiment-bar-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.sentiment-bar {
+  height: 8px;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+  min-width: 4px;
+}
+.sentiment-value {
+  font-size: 0.8rem;
+  font-weight: 600;
+  min-width: 30px;
+}
+
+/* ═══ EXPIRY BADGE ═════════════════════════════════════════ */
+.expiry-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.expiry-badge.critical {
+  background: rgba(239, 68, 68, 0.2);
+  color: #EF4444;
+}
+.expiry-badge.warning {
+  background: rgba(245, 158, 11, 0.2);
+  color: #F59E0B;
+}
+.expiry-badge.ok {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10B981;
+}
+
+/* ═══ RESPONSIVE HEATMAP ═══════════════════════════════════ */
+@media (max-width: 768px) {
+  .heatmap-cell {
+    min-width: 28px;
+    height: 24px;
+    font-size: 0.6rem;
+  }
+  .heatmap-cell-header {
+    min-width: 28px;
+    font-size: 0.55rem;
+  }
+  .heatmap-label {
+    width: 24px;
+    min-width: 24px;
+    font-size: 0.6rem;
+  }
+}

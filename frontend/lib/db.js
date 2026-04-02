@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import bcrypt from 'bcryptjs';
+import { seedWarehouse, seedHR, seedFinance } from './seed-demo.js';
 
 const DB_PATH = path.join(process.cwd(), 'practik.db');
 let _db = null;
@@ -327,6 +328,163 @@ function initDb(db) {
     CREATE INDEX IF NOT EXISTS idx_notif_date ON notifications(created_at);
     CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity_type, entity_id);
     CREATE INDEX IF NOT EXISTS idx_audit_date ON audit_log(created_at);
+
+    -- ═══ WAREHOUSE MODULE ═══════════════════════════════════
+    CREATE TABLE IF NOT EXISTS stock_snapshots_daily (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL REFERENCES core_products(id),
+      snapshot_date TEXT NOT NULL,
+      qty_kg REAL DEFAULT 0,
+      qty_pcs INTEGER DEFAULT 0,
+      warehouse TEXT DEFAULT 'Склад Бровари'
+    );
+    CREATE TABLE IF NOT EXISTS inventory_movements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL REFERENCES core_products(id),
+      movement_date TEXT NOT NULL,
+      type TEXT NOT NULL,
+      qty_kg REAL NOT NULL,
+      batch_id INTEGER,
+      source TEXT,
+      warehouse TEXT DEFAULT 'Склад Бровари'
+    );
+    CREATE TABLE IF NOT EXISTS lot_batches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL REFERENCES core_products(id),
+      batch_number TEXT NOT NULL,
+      production_date TEXT NOT NULL,
+      expiry_date TEXT NOT NULL,
+      qty_produced_kg REAL DEFAULT 0,
+      qty_remaining_kg REAL DEFAULT 0,
+      warehouse TEXT DEFAULT 'Склад Бровари'
+    );
+    CREATE TABLE IF NOT EXISTS warehouse_orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_date TEXT NOT NULL,
+      customer_id INTEGER REFERENCES core_customers(id),
+      status TEXT DEFAULT 'completed',
+      total_weight_kg REAL DEFAULT 0,
+      items_count INTEGER DEFAULT 0,
+      ttn_cost REAL DEFAULT 0,
+      pick_time_min INTEGER DEFAULT 0,
+      warehouse TEXT DEFAULT 'Склад Бровари'
+    );
+    CREATE TABLE IF NOT EXISTS warehouse_config (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      capacity_kg REAL DEFAULT 0
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_stock_snap_date ON stock_snapshots_daily(snapshot_date);
+    CREATE INDEX IF NOT EXISTS idx_stock_snap_prod ON stock_snapshots_daily(product_id);
+    CREATE INDEX IF NOT EXISTS idx_inv_mov_date ON inventory_movements(movement_date);
+    CREATE INDEX IF NOT EXISTS idx_wh_orders_date ON warehouse_orders(order_date);
+    CREATE INDEX IF NOT EXISTS idx_lot_expiry ON lot_batches(expiry_date);
+
+    -- ═══ HR MODULE ══════════════════════════════════════════
+    CREATE TABLE IF NOT EXISTS employees (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      department TEXT,
+      position TEXT,
+      hire_date TEXT,
+      status TEXT DEFAULT 'active',
+      satisfaction_score REAL DEFAULT 7.0,
+      phone TEXT
+    );
+    CREATE TABLE IF NOT EXISTS employee_calls (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL REFERENCES employees(id),
+      call_date TEXT NOT NULL,
+      call_time TEXT,
+      duration_sec INTEGER DEFAULT 0,
+      client_name TEXT,
+      direction TEXT DEFAULT 'outbound',
+      call_type TEXT DEFAULT 'sales'
+    );
+    CREATE TABLE IF NOT EXISTS call_sentiment_scores (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      call_id INTEGER NOT NULL REFERENCES employee_calls(id),
+      sentiment TEXT DEFAULT 'neutral',
+      score REAL DEFAULT 5.0,
+      has_conflict INTEGER DEFAULT 0,
+      ai_summary TEXT
+    );
+    CREATE TABLE IF NOT EXISTS employee_conflict_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL REFERENCES employees(id),
+      call_id INTEGER REFERENCES employee_calls(id),
+      conflict_date TEXT NOT NULL,
+      severity TEXT DEFAULT 'warning',
+      description TEXT,
+      resolution TEXT
+    );
+    CREATE TABLE IF NOT EXISTS employee_sentiment_weekly (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL REFERENCES employees(id),
+      week_start TEXT NOT NULL,
+      avg_score REAL DEFAULT 0,
+      call_count INTEGER DEFAULT 0,
+      conflict_count INTEGER DEFAULT 0,
+      trend TEXT DEFAULT 'stable'
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_emp_calls_date ON employee_calls(call_date);
+    CREATE INDEX IF NOT EXISTS idx_emp_calls_emp ON employee_calls(employee_id);
+    CREATE INDEX IF NOT EXISTS idx_emp_sent_week ON employee_sentiment_weekly(week_start);
+
+    -- ═══ FINANCE MODULE ═════════════════════════════════════
+    CREATE TABLE IF NOT EXISTS receivables (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER REFERENCES core_customers(id),
+      invoice_number TEXT,
+      invoice_date TEXT NOT NULL,
+      due_date TEXT NOT NULL,
+      amount REAL NOT NULL,
+      paid_amount REAL DEFAULT 0,
+      status TEXT DEFAULT 'pending',
+      days_overdue INTEGER DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS payables (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      supplier_name TEXT NOT NULL,
+      invoice_date TEXT NOT NULL,
+      due_date TEXT NOT NULL,
+      amount REAL NOT NULL,
+      paid_amount REAL DEFAULT 0,
+      category TEXT,
+      status TEXT DEFAULT 'pending'
+    );
+    CREATE TABLE IF NOT EXISTS expenses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      expense_date TEXT NOT NULL,
+      category TEXT NOT NULL,
+      subcategory TEXT,
+      amount REAL NOT NULL,
+      description TEXT,
+      is_fixed INTEGER DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS cashflow_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_date TEXT NOT NULL,
+      type TEXT NOT NULL,
+      amount REAL NOT NULL,
+      category TEXT,
+      description TEXT
+    );
+    CREATE TABLE IF NOT EXISTS purchase_price_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      material_name TEXT NOT NULL,
+      effective_date TEXT NOT NULL,
+      price_per_kg REAL NOT NULL,
+      supplier TEXT,
+      market_avg_price REAL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_recv_status ON receivables(status);
+    CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(expense_date);
+    CREATE INDEX IF NOT EXISTS idx_cashflow_date ON cashflow_events(event_date);
+    CREATE INDEX IF NOT EXISTS idx_pp_material ON purchase_price_history(material_name);
   `);
 
   // Seed data
@@ -564,6 +722,16 @@ function seedData(db) {
   // ─── Complaints seed data ───────────────────────────────────
   seedComplaints(db, allProducts);
 
+  // ─── Demo module seeds (Warehouse, HR, Finance) ─────────────
+  try {
+    seedWarehouse(db);
+    seedHR(db);
+    seedFinance(db);
+    console.log('✅ Demo modules seeded (Warehouse, HR, Finance)');
+  } catch (e) {
+    console.warn('⚠️ Demo seed partial failure:', e.message);
+  }
+
   console.log('✅ Database seeded with demo data');
 }
 
@@ -703,6 +871,36 @@ function runMigrations(db) {
     CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id, is_read);
     CREATE INDEX IF NOT EXISTS idx_notif_date ON notifications(created_at);
   `);
+
+  // ─── Warehouse / HR / Finance tables (for existing DBs) ──────
+  const whExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='warehouse_orders'").get();
+  if (!whExists) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS stock_snapshots_daily (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, snapshot_date TEXT NOT NULL, qty_kg REAL DEFAULT 0, qty_pcs INTEGER DEFAULT 0, warehouse TEXT DEFAULT 'Склад Бровари');
+      CREATE TABLE IF NOT EXISTS inventory_movements (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, movement_date TEXT NOT NULL, type TEXT NOT NULL, qty_kg REAL NOT NULL, batch_id INTEGER, source TEXT, warehouse TEXT DEFAULT 'Склад Бровари');
+      CREATE TABLE IF NOT EXISTS lot_batches (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, batch_number TEXT NOT NULL, production_date TEXT NOT NULL, expiry_date TEXT NOT NULL, qty_produced_kg REAL DEFAULT 0, qty_remaining_kg REAL DEFAULT 0, warehouse TEXT DEFAULT 'Склад Бровари');
+      CREATE TABLE IF NOT EXISTS warehouse_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, order_date TEXT NOT NULL, customer_id INTEGER, status TEXT DEFAULT 'completed', total_weight_kg REAL DEFAULT 0, items_count INTEGER DEFAULT 0, ttn_cost REAL DEFAULT 0, pick_time_min INTEGER DEFAULT 0, warehouse TEXT DEFAULT 'Склад Бровари');
+      CREATE TABLE IF NOT EXISTS warehouse_config (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, capacity_kg REAL DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS employees (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, department TEXT, position TEXT, hire_date TEXT, status TEXT DEFAULT 'active', satisfaction_score REAL DEFAULT 7.0, phone TEXT);
+      CREATE TABLE IF NOT EXISTS employee_calls (id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL, call_date TEXT NOT NULL, call_time TEXT, duration_sec INTEGER DEFAULT 0, client_name TEXT, direction TEXT DEFAULT 'outbound', call_type TEXT DEFAULT 'sales');
+      CREATE TABLE IF NOT EXISTS call_sentiment_scores (id INTEGER PRIMARY KEY AUTOINCREMENT, call_id INTEGER NOT NULL, sentiment TEXT DEFAULT 'neutral', score REAL DEFAULT 5.0, has_conflict INTEGER DEFAULT 0, ai_summary TEXT);
+      CREATE TABLE IF NOT EXISTS employee_conflict_events (id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL, call_id INTEGER, conflict_date TEXT NOT NULL, severity TEXT DEFAULT 'warning', description TEXT, resolution TEXT);
+      CREATE TABLE IF NOT EXISTS employee_sentiment_weekly (id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL, week_start TEXT NOT NULL, avg_score REAL DEFAULT 0, call_count INTEGER DEFAULT 0, conflict_count INTEGER DEFAULT 0, trend TEXT DEFAULT 'stable');
+      CREATE TABLE IF NOT EXISTS receivables (id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, invoice_number TEXT, invoice_date TEXT NOT NULL, due_date TEXT NOT NULL, amount REAL NOT NULL, paid_amount REAL DEFAULT 0, status TEXT DEFAULT 'pending', days_overdue INTEGER DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS payables (id INTEGER PRIMARY KEY AUTOINCREMENT, supplier_name TEXT NOT NULL, invoice_date TEXT NOT NULL, due_date TEXT NOT NULL, amount REAL NOT NULL, paid_amount REAL DEFAULT 0, category TEXT, status TEXT DEFAULT 'pending');
+      CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, expense_date TEXT NOT NULL, category TEXT NOT NULL, subcategory TEXT, amount REAL NOT NULL, description TEXT, is_fixed INTEGER DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS cashflow_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_date TEXT NOT NULL, type TEXT NOT NULL, amount REAL NOT NULL, category TEXT, description TEXT);
+      CREATE TABLE IF NOT EXISTS purchase_price_history (id INTEGER PRIMARY KEY AUTOINCREMENT, material_name TEXT NOT NULL, effective_date TEXT NOT NULL, price_per_kg REAL NOT NULL, supplier TEXT, market_avg_price REAL);
+    `);
+    try {
+      seedWarehouse(db);
+      seedHR(db);
+      seedFinance(db);
+      console.log('✅ Migration: Demo modules seeded');
+    } catch (e) {
+      console.warn('⚠️ Migration seed error:', e.message);
+    }
+  }
 
   // ─── Safe column additions (ignore if already exist) ──
   const safeAlter = (sql) => { try { db.exec(sql); } catch {} };

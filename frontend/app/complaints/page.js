@@ -194,9 +194,9 @@ export default function ComplaintsPage() {
         <nav className="sidebar-nav">
           <div className="nav-item" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>📊 Аналітика товарів</div>
           <div className="nav-item" onClick={() => navigate('/marketing')} style={{ cursor: 'pointer' }}>📈 Маркетинг</div>
-          <div className="nav-item" style={{ opacity: 0.5 }}>🏭 Склад</div>
-          <div className="nav-item" style={{ opacity: 0.5 }}>💰 Фінанси</div>
-          <div className="nav-item" style={{ opacity: 0.5 }}>👥 HR</div>
+          <div className="nav-item" onClick={() => navigate('/warehouse')} style={{ cursor: 'pointer' }}>🏭 Склад</div>
+          <div className="nav-item" onClick={() => navigate('/finance')} style={{ cursor: 'pointer' }}>💰 Фінанси</div>
+          <div className="nav-item" onClick={() => navigate('/hr')} style={{ cursor: 'pointer' }}>👥 HR</div>
           <div className="nav-item active">📋 Скарги</div>
           {user.role === 'developer' && (
             <div className="nav-item" onClick={() => navigate('/admin')} style={{ cursor: 'pointer' }}>
