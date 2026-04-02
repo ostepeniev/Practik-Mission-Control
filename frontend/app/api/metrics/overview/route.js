@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getUserFromRequest } from '@/lib/auth';
 import { getDb } from '@/lib/db';
+import {
+  grossMarginPct, grossMarginAmount, returnsPct as calcReturnsPct,
+  deltaPct, deltaPP, round,
+} from '@/lib/metrics';
 
 export async function GET(req) {
   const user = getUserFromRequest(req);
@@ -20,14 +24,8 @@ export async function GET(req) {
   let where = `o.order_date >= ? AND o.order_date <= ? AND o.status != 'cancelled'`;
   let params = [dateFrom, dateTo];
 
-  if (categoryId) {
-    where += ` AND p.category_id = ?`;
-    params.push(categoryId);
-  }
-  if (productId) {
-    where += ` AND oi.product_id = ?`;
-    params.push(productId);
-  }
+  if (categoryId) { where += ` AND p.category_id = ?`; params.push(categoryId); }
+  if (productId) { where += ` AND oi.product_id = ?`; params.push(productId); }
 
   const joinProduct = categoryId ? 'JOIN core_products p ON oi.product_id = p.id' : '';
 
@@ -47,8 +45,8 @@ export async function GET(req) {
   const cogs = row.cogs;
   const volume = row.volume;
   const orderCount = row.order_count;
-  const marginPct = revenue > 0 ? (revenue - cogs) / revenue * 100 : 0;
-  const marginAmount = revenue - cogs;
+  const marginPct = grossMarginPct(revenue, cogs);
+  const marginAmt = grossMarginAmount(revenue, cogs);
 
   // Returns
   const retRow = db.prepare(`
@@ -58,7 +56,7 @@ export async function GET(req) {
     JOIN core_sales_orders o ON oi.order_id = o.id
     WHERE o.order_date >= ? AND o.order_date <= ?
   `).get(dateFrom, dateTo);
-  const returnsPct = volume > 0 ? retRow.returned / volume * 100 : 0;
+  const retPct = calcReturnsPct(retRow.returned, volume);
 
   // Previous period
   const daysDiff = Math.ceil((new Date(dateTo) - new Date(dateFrom)) / 86400000) + 1;
@@ -83,21 +81,38 @@ export async function GET(req) {
   `).get(...prevParams);
 
   const prevRevenue = prev.revenue;
-  const prevMarginPct = prevRevenue > 0 ? (prevRevenue - prev.cogs) / prevRevenue * 100 : 0;
-
-  function deltaPct(c, p) { return p === 0 ? 0 : Math.round((c - p) / p * 1000) / 10; }
+  const prevMargin = grossMarginPct(prevRevenue, prev.cogs);
+  const prevMarginAmt = grossMarginAmount(prevRevenue, prev.cogs);
 
   return NextResponse.json({
     period: { from: dateFrom, to: dateTo },
     metrics: {
-      revenue_mtd: { value: Math.round(revenue * 100) / 100, delta_pct: deltaPct(revenue, prevRevenue), prev_value: Math.round(prevRevenue * 100) / 100, format: 'currency', unit: '₴' },
-      gross_margin_pct: { value: Math.round(marginPct * 10) / 10, delta_pct: Math.round((marginPct - prevMarginPct) * 10) / 10, prev_value: Math.round(prevMarginPct * 10) / 10, format: 'percent', unit: '%' },
-      gross_margin_amount: { value: Math.round(marginAmount * 100) / 100, delta_pct: deltaPct(marginAmount, prev.revenue - prev.cogs), prev_value: Math.round((prev.revenue - prev.cogs) * 100) / 100, format: 'currency', unit: '₴' },
-      sales_volume: { value: Math.round(volume * 10) / 10, delta_pct: deltaPct(volume, prev.volume), prev_value: Math.round(prev.volume * 10) / 10, format: 'number', unit: 'кг' },
-      order_count: { value: orderCount, delta_pct: deltaPct(orderCount, prev.order_count), prev_value: prev.order_count, format: 'number', unit: 'шт' },
-      returns_pct: { value: Math.round(returnsPct * 100) / 100, delta_pct: 0, prev_value: 0, format: 'percent', unit: '%', inverse: true },
+      revenue_mtd: {
+        value: round(revenue), delta_pct: round(deltaPct(revenue, prevRevenue), 1),
+        prev_value: round(prevRevenue), format: 'currency', unit: '₴',
+      },
+      gross_margin_pct: {
+        value: round(marginPct, 1), delta_pct: round(deltaPP(marginPct, prevMargin), 1),
+        prev_value: round(prevMargin, 1), format: 'percent', unit: '%',
+      },
+      gross_margin_amount: {
+        value: round(marginAmt), delta_pct: round(deltaPct(marginAmt, prevMarginAmt), 1),
+        prev_value: round(prevMarginAmt), format: 'currency', unit: '₴',
+      },
+      sales_volume: {
+        value: round(volume, 1), delta_pct: round(deltaPct(volume, prev.volume), 1),
+        prev_value: round(prev.volume, 1), format: 'number', unit: 'кг',
+      },
+      order_count: {
+        value: orderCount, delta_pct: round(deltaPct(orderCount, prev.order_count), 1),
+        prev_value: prev.order_count, format: 'number', unit: 'шт',
+      },
+      returns_pct: {
+        value: round(retPct), delta_pct: 0, prev_value: 0,
+        format: 'percent', unit: '%', inverse: true,
+      },
     },
     last_updated: today,
-    freshness_status: 'fresh'
+    freshness_status: 'fresh',
   });
 }

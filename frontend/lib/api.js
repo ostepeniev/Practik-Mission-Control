@@ -99,8 +99,6 @@ class ApiClient {
   getWidgets() { return this.get('/api/admin/widgets'); }
   toggleWidget(id, visible) { return this.patch(`/api/admin/widgets/${id}`, { is_visible_owner: visible }); }
   getCategories() { return this.get('/api/admin/categories'); }
-  changePassword(data) { return this.post('/api/admin/change-password', data); }
-  getUsers() { return this.get('/api/admin/users'); }
 
   // Marketing
   getMarketingOverview() { return this.get('/api/marketing?view=overview'); }

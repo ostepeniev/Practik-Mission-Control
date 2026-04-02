@@ -434,8 +434,8 @@ function seedData(db) {
 
   // Users
   const insertUser = db.prepare('INSERT INTO app_users (username, password_hash, display_name, role) VALUES (?,?,?,?)');
-  insertUser.run('dev', bcrypt.hashSync('dev123', 10), 'Розробник', 'developer');
-  insertUser.run('ivan', bcrypt.hashSync('owner123', 10), 'Іван (Власник)', 'owner');
+  insertUser.run('admin', bcrypt.hashSync('Alisio777', 10), 'Адміністратор', 'developer');
+  insertUser.run('Ivan', bcrypt.hashSync('kjsd7dh', 10), 'Іван (Власник)', 'owner');
 
   // Generate 90 days of sales
   const allProducts = db.prepare('SELECT * FROM core_products').all();
