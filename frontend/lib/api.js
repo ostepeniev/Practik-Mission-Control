@@ -113,6 +113,19 @@ class ApiClient {
   updateComplaint(id, data) { return this.patch(`/api/complaints/${id}`, data); }
   deleteComplaint(id) { return this.request(`/api/complaints/${id}`, { method: 'DELETE' }); }
   getComplaintsSummary(params = {}) { const q = new URLSearchParams(params).toString(); return this.get(`/api/complaints/summary${q ? '?'+q : ''}`); }
+
+  // Export
+  async exportCSV(type, params = {}) {
+    const q = new URLSearchParams({ type, ...params }).toString();
+    const res = await fetch(`/api/export?${q}`, { headers: { Authorization: `Bearer ${this.token}` } });
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${type}_export.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 }
 
 const api = new ApiClient();

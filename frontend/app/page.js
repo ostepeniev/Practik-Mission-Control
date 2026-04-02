@@ -379,17 +379,32 @@ export default function DashboardPage() {
             <div className="card data-table-wrapper">
               <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                 <span>📋 Всі товари ({products?.total_count || 0})</span>
-                <input
-                  type="text"
-                  value={productSearch}
-                  onChange={e => { setProductSearch(e.target.value); setProductPage(1); }}
-                  placeholder="🔍 Пошук товару..."
-                  style={{
-                    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: '8px', padding: '6px 12px', color: 'var(--text-primary)',
-                    fontSize: '0.8rem', width: '200px', outline: 'none',
-                  }}
-                />
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    value={productSearch}
+                    onChange={e => { setProductSearch(e.target.value); setProductPage(1); }}
+                    placeholder="🔍 Пошук товару..."
+                    style={{
+                      background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '8px', padding: '6px 12px', color: 'var(--text-primary)',
+                      fontSize: '0.8rem', width: '200px', outline: 'none',
+                    }}
+                  />
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      const now = new Date();
+                      let df;
+                      if (period === 'mtd') df = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+                      else if (period === '7d') df = new Date(now - 7 * 86400000).toISOString().slice(0, 10);
+                      else if (period === '30d') df = new Date(now - 30 * 86400000).toISOString().slice(0, 10);
+                      else df = new Date(now - 90 * 86400000).toISOString().slice(0, 10);
+                      api.exportCSV('products', { date_from: df, date_to: now.toISOString().slice(0, 10) });
+                    }}
+                    title="Експорт в CSV"
+                  >📥 CSV</button>
+                </div>
               </div>
 
               {/* Status Filter Chips */}
