@@ -92,6 +92,9 @@ export default function DashboardPage() {
   const [categoryFilter, setCategoryFilter] = useState('');
   const [categories, setCategories] = useState([]);
   const [complaintKpi, setComplaintKpi] = useState(null);
+  const [productSearch, setProductSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [productPage, setProductPage] = useState(1);
 
   useEffect(() => {
     const u = api.getUser();
@@ -100,7 +103,7 @@ export default function DashboardPage() {
     loadData();
   }, []);
 
-  useEffect(() => { if (user) loadData(); }, [period, categoryFilter, sortBy, sortDir]);
+  useEffect(() => { if (user) loadData(); }, [period, categoryFilter, sortBy, sortDir, productSearch, statusFilter, productPage]);
 
   async function loadData() {
     setLoading(true);
@@ -122,7 +125,7 @@ export default function DashboardPage() {
     try {
       const [ov, prod, rev, margin, topP, topC, al, ins] = await Promise.all([
         api.getOverview(params),
-        api.getProducts({ ...params, sort_by: sortBy, sort_dir: sortDir }),
+        api.getProducts({ ...params, sort_by: sortBy, sort_dir: sortDir, search: productSearch, status: statusFilter, page: productPage, page_size: 20 }),
         api.getSeries('revenue', params),
         api.getSeries('margin', params),
         api.getTopProducts(params),
@@ -374,7 +377,57 @@ export default function DashboardPage() {
 
             {/* Products Table */}
             <div className="card data-table-wrapper">
-              <div className="card-title">📋 Всі товари ({products?.total_count || 0})</div>
+              <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                <span>📋 Всі товари ({products?.total_count || 0})</span>
+                <input
+                  type="text"
+                  value={productSearch}
+                  onChange={e => { setProductSearch(e.target.value); setProductPage(1); }}
+                  placeholder="🔍 Пошук товару..."
+                  style={{
+                    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '8px', padding: '6px 12px', color: 'var(--text-primary)',
+                    fontSize: '0.8rem', width: '200px', outline: 'none',
+                  }}
+                />
+              </div>
+
+              {/* Status Filter Chips */}
+              {products?.status_summary && (
+                <div style={{ display: 'flex', gap: '6px', padding: '0 16px 12px', flexWrap: 'wrap' }}>
+                  <button
+                    className={`filter-chip ${!statusFilter ? 'active' : ''}`}
+                    onClick={() => { setStatusFilter(''); setProductPage(1); }}
+                  >Всі ({products.total_count})</button>
+                  {products.status_summary.critical > 0 && (
+                    <button className={`filter-chip ${statusFilter === 'critical' ? 'active' : ''}`}
+                      onClick={() => { setStatusFilter(statusFilter === 'critical' ? '' : 'critical'); setProductPage(1); }}
+                      style={{ borderColor: 'var(--color-critical)' }}
+                    >🔴 Критично ({products.status_summary.critical})</button>
+                  )}
+                  {products.status_summary.risk > 0 && (
+                    <button className={`filter-chip ${statusFilter === 'risk' ? 'active' : ''}`}
+                      onClick={() => { setStatusFilter(statusFilter === 'risk' ? '' : 'risk'); setProductPage(1); }}
+                      style={{ borderColor: 'var(--color-risk)' }}
+                    >🟠 Ризик ({products.status_summary.risk})</button>
+                  )}
+                  {products.status_summary.attention > 0 && (
+                    <button className={`filter-chip ${statusFilter === 'attention' ? 'active' : ''}`}
+                      onClick={() => { setStatusFilter(statusFilter === 'attention' ? '' : 'attention'); setProductPage(1); }}
+                      style={{ borderColor: 'var(--color-attention)' }}
+                    >🟡 Увага ({products.status_summary.attention})</button>
+                  )}
+                  <button className={`filter-chip ${statusFilter === 'normal' ? 'active' : ''}`}
+                    onClick={() => { setStatusFilter(statusFilter === 'normal' ? '' : 'normal'); setProductPage(1); }}
+                  >✅ Норма ({products.status_summary.normal})</button>
+                  {products.status_summary.new > 0 && (
+                    <button className={`filter-chip ${statusFilter === 'new' ? 'active' : ''}`}
+                      onClick={() => { setStatusFilter(statusFilter === 'new' ? '' : 'new'); setProductPage(1); }}
+                    >🆕 Нові ({products.status_summary.new})</button>
+                  )}
+                </div>
+              )}
+
               <div className="table-scroll">
                 <table className="data-table">
                   <thead>
@@ -417,6 +470,28 @@ export default function DashboardPage() {
                   </tbody>
                 </table>
               </div>
+
+              {/* Pagination */}
+              {products?.total_pages > 1 && (
+                <div style={{
+                  display: 'flex', justifyContent: 'center', alignItems: 'center',
+                  gap: '8px', padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.06)',
+                }}>
+                  <button
+                    className="filter-chip"
+                    disabled={productPage <= 1}
+                    onClick={() => setProductPage(p => Math.max(1, p - 1))}
+                  >◀</button>
+                  <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                    {productPage} / {products.total_pages}
+                  </span>
+                  <button
+                    className="filter-chip"
+                    disabled={productPage >= products.total_pages}
+                    onClick={() => setProductPage(p => p + 1)}
+                  >▶</button>
+                </div>
+              )}
             </div>
 
             {/* Bottom: Customers + AI */}

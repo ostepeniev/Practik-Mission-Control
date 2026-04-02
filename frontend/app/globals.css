@@ -50,6 +50,13 @@
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
   --shadow-glow-green: 0 0 20px rgba(46, 204, 113, 0.2);
   --shadow-glow-blue: 0 0 20px rgba(52, 152, 219, 0.2);
+  
+  /* Status Colors */
+  --color-critical: #FF6B6B;
+  --color-risk: #F39C12;
+  --color-attention: #F1C40F;
+  --color-normal: #2ECC71;
+  --color-new: #3498DB;
 }
 
 * {
@@ -664,6 +671,18 @@ body {
   background: var(--accent-green-dim);
   border-color: var(--accent-green);
   color: var(--accent-green);
+}
+
+.filter-chip:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  max-height: 600px;
+  overflow-y: auto;
 }
 
 select.filter-select {
