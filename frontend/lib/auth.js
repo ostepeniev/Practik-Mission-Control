@@ -33,3 +33,29 @@ export function authenticateUser(username, password) {
   if (!bcrypt.compareSync(password, user.password_hash)) return null;
   return user;
 }
+
+/**
+ * Role hierarchy: developer > owner > manager > viewer
+ * Returns null if allowed, or a NextResponse 403 if not.
+ */
+const ROLE_LEVELS = { developer: 100, owner: 80, manager: 50, viewer: 10 };
+
+export function checkRole(user, requiredRole) {
+  if (!user) return false;
+  const userLevel = ROLE_LEVELS[user.role] || 0;
+  const requiredLevel = ROLE_LEVELS[requiredRole] || 0;
+  return userLevel >= requiredLevel;
+}
+
+/**
+ * For 'manager' role: get their manager_id to auto-filter data.
+ * Returns null for owner/developer (they see all data).
+ */
+export function getDataScope(user) {
+  if (!user) return null;
+  if (['developer', 'owner'].includes(user.role)) return { scope: 'all' };
+  // Manager sees only their own data
+  const db = getDb();
+  const manager = db.prepare('SELECT id FROM core_managers WHERE name = ?').get(user.display_name);
+  return { scope: 'manager', manager_id: manager?.id || null };
+}

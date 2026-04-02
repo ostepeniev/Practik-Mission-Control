@@ -126,6 +126,15 @@ class ApiClient {
     a.click();
     URL.revokeObjectURL(url);
   }
+
+  // Notifications
+  getNotifications(limit = 20) { return this.get(`/api/notifications?limit=${limit}`); }
+  getUnreadNotifications() { return this.get('/api/notifications?unread=true'); }
+  markNotificationsRead(ids) { return this.patch('/api/notifications', { ids }); }
+  markAllNotificationsRead() { return this.patch('/api/notifications', { mark_all: true }); }
+
+  // Audit
+  getAuditLog(params = {}) { const q = new URLSearchParams(params).toString(); return this.get(`/api/admin/audit${q ? '?'+q : ''}`); }
 }
 
 const api = new ApiClient();

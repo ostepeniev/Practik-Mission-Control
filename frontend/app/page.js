@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
+import NotificationBell from '@/app/components/NotificationBell';
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -257,7 +258,10 @@ export default function DashboardPage() {
             <h2>📊 Аналітика товарів</h2>
             <p>Щоденний контроль продажів і маржинальності</p>
           </div>
-          {user.role === 'developer' && <span className="dev-badge">🛠 Dev Mode</span>}
+          <div className="header-actions">
+            <NotificationBell />
+            {user.role === 'developer' && <span className="dev-badge">🛠 Dev Mode</span>}
+          </div>
         </div>
 
         {/* Filters */}

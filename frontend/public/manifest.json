@@ -1,0 +1,27 @@
+{
+  "name": "Practik UA — Mission Control",
+  "short_name": "Practik UA",
+  "description": "AI-driven business intelligence dashboard for Practik pet food",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0A0E1A",
+  "theme_color": "#2ECC71",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "lang": "uk",
+  "dir": "ltr"
+}
