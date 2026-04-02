@@ -357,7 +357,7 @@ export default function DashboardPage() {
                 </ResponsiveContainer>
               </div>
               <div className="card">
-                <div className="card-title">🔔 Алерти</div>
+                <div className="card-title">🔔 Алерти & AI-гіпотези</div>
                 <div className="alert-list">
                   {alerts.length === 0 ? (
                     <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', padding: '16px' }}>
@@ -366,13 +366,25 @@ export default function DashboardPage() {
                   ) : alerts.slice(0, 8).map((a, i) => (
                     <div key={i} className={`alert-item ${a.severity}`}
                          onClick={() => router.push(`/products/${a.product_id}`)}
-                         style={{ cursor: 'pointer' }}>
-                      <div>
-                        <div className="alert-product">
-                          <StatusBadge status={a.severity} /> {a.product_name}
+                         style={{ cursor: 'pointer', flexDirection: 'column' }}>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <div>
+                          <div className="alert-product">
+                            <StatusBadge status={a.severity} /> {a.product_name}
+                          </div>
+                          <div className="alert-message">{a.message}</div>
                         </div>
-                        <div className="alert-message">{a.message}</div>
                       </div>
+                      {a.hypotheses?.length > 0 && (
+                        <div style={{ marginTop: '6px', paddingLeft: '4px', borderLeft: '2px solid rgba(155,89,182,0.3)' }}>
+                          {a.hypotheses.slice(0, 2).map((h, j) => (
+                            <div key={j} style={{ fontSize: '0.73rem', color: 'var(--accent-purple)', lineHeight: 1.4, marginBottom: '2px' }}>
+                              {h.icon} {h.text}
+                              <span style={{ opacity: 0.5, marginLeft: '4px' }}>({Math.round(h.confidence * 100)}%)</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

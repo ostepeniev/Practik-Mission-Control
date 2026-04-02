@@ -136,6 +136,9 @@ function initDb(db) {
       status TEXT DEFAULT 'new',
       severity TEXT DEFAULT 'medium',
       resolution TEXT,
+      ai_classification TEXT,
+      resolution_notes TEXT,
+      root_cause TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
 

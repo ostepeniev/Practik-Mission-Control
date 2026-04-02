@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getUserFromRequest } from '@/lib/auth';
 import { getDb } from '@/lib/db';
+import { classifyComplaint, getClassificationTypes } from '@/lib/complaint-classifier';
 
 export async function GET(req) {
   const user = getUserFromRequest(req);
@@ -15,6 +16,7 @@ export async function GET(req) {
   const productId = searchParams.get('product_id');
   const status = searchParams.get('status');
   const severity = searchParams.get('severity');
+  const classification = searchParams.get('classification');
 
   let where = 'WHERE c.complaint_date >= ? AND c.complaint_date <= ?';
   const params = [dateFrom, dateTo];
@@ -22,6 +24,7 @@ export async function GET(req) {
   if (productId) { where += ' AND c.product_id = ?'; params.push(Number(productId)); }
   if (status) { where += ' AND c.status = ?'; params.push(status); }
   if (severity) { where += ' AND c.severity = ?'; params.push(severity); }
+  if (classification) { where += ' AND c.ai_classification = ?'; params.push(classification); }
 
   const complaints = db.prepare(`
     SELECT c.*, p.name as product_name, p.sku as product_sku, p.brand as product_brand
@@ -31,7 +34,11 @@ export async function GET(req) {
     ORDER BY c.complaint_date DESC, c.id DESC
   `).all(...params);
 
-  return NextResponse.json({ complaints, total: complaints.length });
+  return NextResponse.json({
+    complaints,
+    total: complaints.length,
+    classification_types: getClassificationTypes(),
+  });
 }
 
 export async function POST(req) {
@@ -45,11 +52,14 @@ export async function POST(req) {
     return NextResponse.json({ detail: 'product_id, complaint_date, and description are required' }, { status: 400 });
   }
 
+  // AI Classification
+  const classification = classifyComplaint(description);
+
   const db = getDb();
   const result = db.prepare(`
-    INSERT INTO core_complaints (product_id, complaint_date, batch_number, source, description, status, severity)
-    VALUES (?, ?, ?, ?, ?, 'new', ?)
-  `).run(product_id, complaint_date, batch_number || null, source || 'клієнт', description, severity || 'medium');
+    INSERT INTO core_complaints (product_id, complaint_date, batch_number, source, description, status, severity, ai_classification)
+    VALUES (?, ?, ?, ?, ?, 'new', ?, ?)
+  `).run(product_id, complaint_date, batch_number || null, source || 'клієнт', description, severity || 'medium', classification.type);
 
   const complaint = db.prepare(`
     SELECT c.*, p.name as product_name, p.sku as product_sku, p.brand as product_brand
@@ -58,5 +68,16 @@ export async function POST(req) {
     WHERE c.id = ?
   `).get(result.lastInsertRowid);
 
-  return NextResponse.json(complaint, { status: 201 });
+  // Create notification for high-severity complaints
+  if (severity === 'high' || severity === 'critical') {
+    db.prepare(
+      "INSERT INTO notifications (type, severity, title, body, link, source) VALUES (?, ?, ?, ?, ?, ?)"
+    ).run('complaint', severity, `📢 Нова скарга: ${classification.icon} ${classification.label}`,
+      description.slice(0, 100), `/complaints`, 'complaint');
+  }
+
+  return NextResponse.json({
+    ...complaint,
+    ai_classification_detail: classification,
+  }, { status: 201 });
 }

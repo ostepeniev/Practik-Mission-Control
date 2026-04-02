@@ -11,6 +11,14 @@ const severityLabels = { low: 'Низька', medium: 'Середня', high: '�
 const severityColors = { low: '#64748B', medium: '#F59E0B', high: '#EF4444' };
 const statusLabels = { new: 'Нова', investigating: 'Розслідування', resolved: 'Вирішена', dismissed: 'Відхилена' };
 const statusIcons = { new: '🆕', investigating: '🔍', resolved: '✅', dismissed: '❌' };
+const classificationLabels = {
+  diet_mismatch: { label: 'Раціон', icon: '🐾', color: '#3498DB' },
+  batch_problem: { label: 'Партія', icon: '🏭', color: '#E74C3C' },
+  shipping_damage: { label: 'Доставка', icon: '📦', color: '#F39C12' },
+  packaging_error: { label: 'Комплектація', icon: '📋', color: '#9B59B6' },
+  quality_concern: { label: 'Якість', icon: '⚠️', color: '#E67E22' },
+  other: { label: 'Інше', icon: '❓', color: '#64748B' },
+};
 
 function SeverityBadge({ severity }) {
   return (
@@ -348,7 +356,13 @@ export default function ComplaintsPage() {
 
             {/* Complaints Table */}
             <div className="card data-table-wrapper">
-              <div className="card-title">📋 Всі скарги ({complaints.length})</div>
+              <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>📋 Всі скарги ({complaints.length})</span>
+                <button className="btn btn-secondary btn-sm" onClick={() => {
+                  const { date_from, date_to } = getDateRange();
+                  api.exportCSV('complaints', { date_from, date_to });
+                }} title="Експорт CSV">📥 CSV</button>
+              </div>
               <div className="table-scroll">
                 <table className="data-table complaints-table">
                   <thead>
@@ -356,6 +370,7 @@ export default function ComplaintsPage() {
                       <th>Дата</th>
                       <th>Товар</th>
                       <th>Партія</th>
+                      <th>AI Тип</th>
                       <th>Джерело</th>
                       <th>Опис</th>
                       <th>Рівень</th>
@@ -364,41 +379,50 @@ export default function ComplaintsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {complaints.map(c => (
-                      <tr key={c.id}>
-                        <td style={{ whiteSpace: 'nowrap' }}>{c.complaint_date}</td>
-                        <td>
-                          <strong>{c.product_name}</strong>
-                          <br /><span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{c.product_sku}</span>
-                        </td>
-                        <td>
-                          {c.batch_number ? (
-                            <span className="batch-number-tag">📦 {c.batch_number}</span>
-                          ) : (
-                            <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>—</span>
-                          )}
-                        </td>
-                        <td style={{ textTransform: 'capitalize' }}>{c.source}</td>
-                        <td style={{ maxWidth: '300px' }}>{c.description}</td>
-                        <td><SeverityBadge severity={c.severity} /></td>
-                        <td>
-                          <select
-                            className="status-select"
-                            value={c.status}
-                            onChange={e => handleStatusChange(c.id, e.target.value)}
-                          >
-                            <option value="new">🆕 Нова</option>
-                            <option value="investigating">🔍 Розслідування</option>
-                            <option value="resolved">✅ Вирішена</option>
-                            <option value="dismissed">❌ Відхилена</option>
-                          </select>
-                        </td>
-                        <td>
-                          <button className="btn btn-secondary btn-xs" onClick={() => handleDelete(c.id)}
-                                  title="Видалити">🗑</button>
-                        </td>
-                      </tr>
-                    ))}
+                    {complaints.map(c => {
+                      const cls = classificationLabels[c.ai_classification] || classificationLabels.other;
+                      return (
+                        <tr key={c.id}>
+                          <td style={{ whiteSpace: 'nowrap' }}>{c.complaint_date}</td>
+                          <td>
+                            <strong>{c.product_name}</strong>
+                            <br /><span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{c.product_sku}</span>
+                          </td>
+                          <td>
+                            {c.batch_number ? (
+                              <span className="batch-number-tag">📦 {c.batch_number}</span>
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>—</span>
+                            )}
+                          </td>
+                          <td>
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center', gap: '3px',
+                              fontSize: '0.72rem', fontWeight: 600, padding: '2px 8px',
+                              borderRadius: '12px', background: `${cls.color}22`, color: cls.color
+                            }}>
+                              {cls.icon} {cls.label}
+                            </span>
+                          </td>
+                          <td style={{ textTransform: 'capitalize' }}>{c.source}</td>
+                          <td style={{ maxWidth: '250px', whiteSpace: 'normal' }}>{c.description}</td>
+                          <td><SeverityBadge severity={c.severity} /></td>
+                          <td>
+                            <select className="status-select" value={c.status}
+                              onChange={e => handleStatusChange(c.id, e.target.value)}>
+                              <option value="new">🆕 Нова</option>
+                              <option value="investigating">🔍 Розслідування</option>
+                              <option value="resolved">✅ Вирішена</option>
+                              <option value="dismissed">❌ Відхилена</option>
+                            </select>
+                          </td>
+                          <td>
+                            <button className="btn btn-secondary btn-xs" onClick={() => handleDelete(c.id)}
+                                    title="Видалити">🗑</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
