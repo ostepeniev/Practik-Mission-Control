@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import api from '@/lib/api';
 
-export default function AIChatWidget() {
+export default function AIChatWidget({ pageContext = {} }) {
   const [open, setOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -62,7 +62,7 @@ export default function AIChatWidget() {
     setToolsUsed([]);
 
     try {
-      const res = await api.sendAIMessage(userMsg, conversationId);
+      const res = await api.sendAIMessage(userMsg, conversationId, pageContext);
       if (res.conversation_id) setConversationId(res.conversation_id);
       if (res.tools_used) setToolsUsed(res.tools_used);
       setMessages(prev => [...prev, { role: 'assistant', content: res.content || 'Немає відповіді' }]);
@@ -113,7 +113,7 @@ export default function AIChatWidget() {
             <span className="ai-chat-avatar">🤖</span>
             <div>
               <div className="ai-chat-title">AI Аналітик</div>
-              <div className="ai-chat-subtitle">Practik UA · GPT-4o</div>
+              <div className="ai-chat-subtitle">Practik UA · {pageContext.label || 'Дашборд'}</div>
             </div>
           </div>
           <div className="ai-chat-header-actions">
@@ -158,12 +158,12 @@ export default function AIChatWidget() {
               <h3>Привіт! Я AI-аналітик Practik UA</h3>
               <p>Запитуйте будь-що про продажі, маржу, товари, скарги та клієнтів.</p>
               <div className="ai-suggestions">
-                {[
+                {(pageContext.suggestions || [
                   'Яка загальна маржа за останній місяць?',
                   'Покажи проблемні партії',
                   'Топ-5 товарів по виторгу',
                   'Порівняй канали продажів',
-                ].map((q, i) => (
+                ]).map((q, i) => (
                   <button key={i} className="ai-suggestion-chip" onClick={() => { setInput(q); }}>
                     {q}
                   </button>

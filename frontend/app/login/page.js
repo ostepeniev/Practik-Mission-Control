@@ -60,9 +60,8 @@ export default function LoginPage() {
           </button>
           {error && <div className="login-error">{error}</div>}
         </form>
-        <div style={{ marginTop: '24px', fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center' }}>
-          <div>🔑 Тестові акаунти:</div>
-          <div style={{ marginTop: '4px' }}>dev / dev123 (Розробник) &nbsp;|&nbsp; ivan / owner123 (Власник)</div>
+        <div style={{ marginTop: '24px', fontSize: '0.7rem', color: 'var(--text-muted)', textAlign: 'center', opacity: 0.5 }}>
+          © {new Date().getFullYear()} Practik UA
         </div>
       </div>
     </div>

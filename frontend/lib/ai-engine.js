@@ -215,6 +215,43 @@ const TOOLS = [
   },
 ];
 
+// ─── Page-Aware Tool Mapping ─────────────────────────────
+
+/**
+ * Мапа сторінка → priority tools.
+ * Якщо сторінка не в мапі — всі tools доступні в дефолтному порядку.
+ */
+const PAGE_TOOL_MAP = {
+  dashboard: null, // all tools in default order
+  product_detail: ['get_product_analysis', 'get_sales_kpi', 'get_complaints_report', 'get_trends', 'get_top_products'],
+  complaints: ['get_complaints_report', 'get_product_analysis', 'get_sales_kpi', 'get_alerts_summary'],
+  marketing: ['get_marketing_kpi', 'get_marketing_trends', 'get_sales_kpi', 'get_customer_stats'],
+};
+
+function getToolsForPage(pageContext) {
+  if (!pageContext?.page) return TOOLS;
+  const allowedNames = PAGE_TOOL_MAP[pageContext.page];
+  if (!allowedNames) return TOOLS;
+  // Reorder: priority tools first, then the rest
+  const priority = TOOLS.filter(t => allowedNames.includes(t.function.name));
+  const rest = TOOLS.filter(t => !allowedNames.includes(t.function.name));
+  return [...priority, ...rest];
+}
+
+function getPagePrompt(pageContext) {
+  if (!pageContext?.page) return '';
+  switch (pageContext.page) {
+    case 'product_detail':
+      return `\n\nКористувач зараз на сторінці конкретного товару (ID: ${pageContext.product_id}). Пріоритетно відповідай про цей товар. Якщо питання неоднозначне — використай get_product_analysis з product_id=${pageContext.product_id}.`;
+    case 'complaints':
+      return '\n\nКористувач на сторінці скарг. Пріоритет: аналіз скарг, кластери, проблемні партії, якість.';
+    case 'marketing':
+      return '\n\nКористувач на маркетинговому дашборді. Пріоритет: ROAS, CAC, CPL, ефективність каналів, тренди бюджету.';
+    default:
+      return '';
+  }
+}
+
 // ─── Tool Implementations ──────────────────────────────────
 function executeTool(name, args) {
   // Check cache first
@@ -685,11 +722,14 @@ function _executeTool(name, args) {
 }
 
 // ─── Chat with Tool Calling ─────────────────────────────────
-export async function chat(messages, conversationId, userId) {
+export async function chat(messages, conversationId, userId, pageContext) {
   const db = getDb();
+  
+  const contextualPrompt = SYSTEM_PROMPT + getPagePrompt(pageContext);
+  const contextualTools = getToolsForPage(pageContext);
 
   const openaiMessages = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: contextualPrompt },
     ...messages.map(m => ({
       role: m.role,
       content: m.content,
@@ -700,7 +740,7 @@ export async function chat(messages, conversationId, userId) {
 
   let gatewayResult = await chatCompletion({
     messages: openaiMessages,
-    tools: TOOLS,
+    tools: contextualTools,
     temperature: 0.3,
     max_tokens: 4000,
   });
@@ -743,7 +783,7 @@ export async function chat(messages, conversationId, userId) {
     // Get next response
     gatewayResult = await chatCompletion({
       messages: openaiMessages,
-      tools: TOOLS,
+      tools: contextualTools,
       temperature: 0.3,
       max_tokens: 4000,
     });
@@ -782,18 +822,20 @@ export async function chat(messages, conversationId, userId) {
 }
 
 // ─── Streaming Chat ─────────────────────────────────────────
-export async function chatStream(messages, conversationId, userId) {
+export async function chatStream(messages, conversationId, userId, pageContext) {
   const db = getDb();
 
-  // First, resolve tool calls non-streamed
+  const contextualPrompt = SYSTEM_PROMPT + getPagePrompt(pageContext);
+  const contextualTools = getToolsForPage(pageContext);
+
   const openaiMessages = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: contextualPrompt },
     ...messages,
   ];
 
   let gatewayResult = await chatCompletion({
     messages: openaiMessages,
-    tools: TOOLS,
+    tools: contextualTools,
     temperature: 0.3,
     max_tokens: 4000,
   });
@@ -820,7 +862,7 @@ export async function chatStream(messages, conversationId, userId) {
 
     gatewayResult = await chatCompletion({
       messages: openaiMessages,
-      tools: TOOLS,
+      tools: contextualTools,
       temperature: 0.3,
       max_tokens: 4000,
     });

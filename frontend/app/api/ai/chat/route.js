@@ -7,7 +7,7 @@ export async function POST(req) {
   const user = getUserFromRequest(req);
   if (!user) return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 });
 
-  const { message, conversation_id } = await req.json();
+  const { message, conversation_id, page_context } = await req.json();
   if (!message) return NextResponse.json({ detail: 'message is required' }, { status: 400 });
 
   const db = getDb();
@@ -32,7 +32,7 @@ export async function POST(req) {
   ).all(convId);
 
   try {
-    const result = await chat(history, convId, user.sub);
+    const result = await chat(history, convId, user.sub, page_context);
 
     // Auto-generate title from first message
     if (!conversation_id) {
@@ -45,13 +45,14 @@ export async function POST(req) {
       content: result.content,
       tools_used: result.tools_used,
       usage: result.usage,
+      provider: result.provider,
+      model: result.model,
     });
   } catch (err) {
     console.error('AI Chat error:', err);
 
-    // Fallback for API errors
     const errorMsg = err.message?.includes('API key')
-      ? 'OpenAI API ключ не налаштований або невалідний.'
+      ? 'API ключ не налаштований або невалідний.'
       : `Помилка AI: ${err.message}`;
 
     return NextResponse.json({

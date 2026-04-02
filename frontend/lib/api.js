@@ -79,7 +79,16 @@ class ApiClient {
   // AI
   getInsights(limit = 10) { return this.get(`/api/ai/insights?limit=${limit}`); }
   askAI(question, productId, context) { return this.post('/api/ai/insights', { question, product_id: productId, context }); }
-  sendAIMessage(message, conversationId) { return this.post('/api/ai/chat', { message, conversation_id: conversationId }); }
+  sendAIMessage(message, conversationId, pageContext) {
+    return this.post('/api/ai/chat', {
+      message,
+      conversation_id: conversationId,
+      page_context: pageContext ? {
+        page: pageContext.page,
+        product_id: pageContext.productId || null,
+      } : null,
+    });
+  }
   getConversations() { return this.get('/api/ai/conversations'); }
   getConversation(id) { return this.get(`/api/ai/conversations/${id}`); }
   deleteConversation(id) { return this.request(`/api/ai/conversations/${id}`, { method: 'DELETE' }); }
@@ -90,6 +99,8 @@ class ApiClient {
   getWidgets() { return this.get('/api/admin/widgets'); }
   toggleWidget(id, visible) { return this.patch(`/api/admin/widgets/${id}`, { is_visible_owner: visible }); }
   getCategories() { return this.get('/api/admin/categories'); }
+  changePassword(data) { return this.post('/api/admin/change-password', data); }
+  getUsers() { return this.get('/api/admin/users'); }
 
   // Marketing
   getMarketingOverview() { return this.get('/api/marketing?view=overview'); }
