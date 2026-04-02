@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
+import NotificationBell from '@/app/components/NotificationBell';
 import {
   LineChart, Line, BarChart, Bar, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
@@ -175,15 +176,18 @@ export default function MarketingPage() {
             <h2>📈 Маркетинг</h2>
             <p>Щотижневі показники рекламних каналів · Тиждень: {overview?.latest_week || '—'}</p>
           </div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            {overview?.last_sync && (
-              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginRight: '8px' }}>
-                Останній sync: {new Date(overview.last_sync.created_at).toLocaleString('uk-UA')}
-              </span>
-            )}
-            <button className="btn btn-primary btn-sm" onClick={handleSync} disabled={syncing}>
-              {syncing ? '⏳ Sync...' : '🔄 Sync з Sheets'}
-            </button>
+          <div className="header-actions">
+            <NotificationBell />
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {overview?.last_sync && (
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginRight: '8px' }}>
+                  Останній sync: {new Date(overview.last_sync.created_at).toLocaleString('uk-UA')}
+                </span>
+              )}
+              <button className="btn btn-primary btn-sm" onClick={handleSync} disabled={syncing}>
+                {syncing ? '⏳ Sync...' : '🔄 Sync з Sheets'}
+              </button>
+            </div>
           </div>
         </div>
 

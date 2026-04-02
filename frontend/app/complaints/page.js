@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
+import NotificationBell from '@/app/components/NotificationBell';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
@@ -222,9 +223,12 @@ export default function ComplaintsPage() {
             <h2>📋 Скарги та контроль якості</h2>
             <p>Моніторинг скарг, виявлення проблемних партій</p>
           </div>
-          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-            + Нова скарга
-          </button>
+          <div className="header-actions">
+            <NotificationBell />
+            <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+              + Нова скарга
+            </button>
+          </div>
         </div>
 
         {/* Filters */}

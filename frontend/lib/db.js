@@ -685,12 +685,32 @@ function runMigrations(db) {
     CREATE INDEX IF NOT EXISTS idx_complaints_date ON core_complaints(complaint_date);
     CREATE INDEX IF NOT EXISTS idx_complaints_status ON core_complaints(status);
     CREATE INDEX IF NOT EXISTS idx_ai_messages_conv ON ai_messages(conversation_id);
+
+    -- Notifications (added in Phase 2)
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      type TEXT NOT NULL DEFAULT 'alert',
+      severity TEXT DEFAULT 'info',
+      title TEXT NOT NULL,
+      body TEXT,
+      link TEXT,
+      source TEXT DEFAULT 'system',
+      is_read INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id, is_read);
+    CREATE INDEX IF NOT EXISTS idx_notif_date ON notifications(created_at);
   `);
 
-  // ─── User table extensions (safe ALTER — ignore if columns exist) ──
+  // ─── Safe column additions (ignore if already exist) ──
   const safeAlter = (sql) => { try { db.exec(sql); } catch {} };
   safeAlter('ALTER TABLE app_users ADD COLUMN department TEXT');
-  safeAlter('ALTER TABLE app_users ADD COLUMN permissions TEXT DEFAULT \'[]\'');
+  safeAlter("ALTER TABLE app_users ADD COLUMN permissions TEXT DEFAULT '[]'");
+  safeAlter('ALTER TABLE core_complaints ADD COLUMN ai_classification TEXT');
+  safeAlter('ALTER TABLE core_complaints ADD COLUMN resolution_notes TEXT');
+  safeAlter('ALTER TABLE core_complaints ADD COLUMN root_cause TEXT');
 
   // ─── Seed page access for new roles ──────────────────────
   const insertAccess2 = db.prepare(
