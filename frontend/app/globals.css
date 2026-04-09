@@ -1927,7 +1927,65 @@ select.filter-select:focus {
 
 /* ─── Marketing Dashboard ──────────────────────────────────── */
 .marketing-kpi {
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.marketing-kpi .kpi-value {
+  font-size: 1.5rem;
+}
+
+.period-selector {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.week-picker-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 180px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 200;
+  padding: 4px;
+  animation: fadeSlideDown 0.2s ease;
+}
+
+@keyframes fadeSlideDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.week-picker-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.week-picker-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+
+.week-picker-item.active {
+  background: var(--accent-green-dim);
+  color: var(--accent-green);
+  font-weight: 600;
 }
 
 .marketing-alerts-card {
@@ -2009,11 +2067,6 @@ select.filter-select:focus {
   border: 1px solid rgba(231, 76, 60, 0.3);
 }
 
-@keyframes slideDown {
-  from { opacity: 0; transform: translateY(-10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
 .marketing-channels-table tfoot td {
   background: var(--bg-secondary);
   border-top: 2px solid var(--accent-green);
@@ -2026,9 +2079,15 @@ select.filter-select:focus {
   margin-top: 2px;
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1400px) {
   .marketing-kpi {
     grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 1000px) {
+  .marketing-kpi {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
@@ -2036,9 +2095,11 @@ select.filter-select:focus {
   .marketing-kpi {
     grid-template-columns: repeat(2, 1fr);
   }
-
   .charts-grid {
     grid-template-columns: 1fr;
+  }
+  .period-selector {
+    flex-wrap: wrap;
   }
 }
 
@@ -2326,5 +2387,386 @@ select.filter-select:focus {
     width: 24px;
     min-width: 24px;
     font-size: 0.6rem;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════ */
+/* ═══ CEO PULSE BLOCK ══════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════ */
+
+.pulse-block {
+  background: linear-gradient(135deg, rgba(46, 204, 113, 0.06), rgba(52, 152, 219, 0.06));
+  border: 1px solid rgba(46, 204, 113, 0.15);
+  border-radius: var(--radius-xl);
+  padding: var(--gap-lg);
+  margin-bottom: var(--gap-lg);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--gap-lg);
+  position: relative;
+  overflow: hidden;
+  animation: pulseSlideIn 0.6s ease-out;
+}
+
+.pulse-block::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent-green), var(--accent-blue), var(--accent-purple));
+}
+
+@keyframes pulseSlideIn {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.pulse-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pulse-summary-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--accent-green);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.pulse-summary-label .pulse-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent-green);
+  animation: pulseDot 2s ease-in-out infinite;
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 4px var(--accent-green); }
+  50% { opacity: 0.4; box-shadow: 0 0 8px var(--accent-green); }
+}
+
+.pulse-summary-text {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  white-space: pre-line;
+}
+
+.pulse-summary-text .pulse-loading {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ─── Plan/Fact Gauges ───────────────────────────────────── */
+.plan-gauges {
+  display: flex;
+  gap: var(--gap-lg);
+  align-items: center;
+}
+
+.plan-gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 90px;
+}
+
+.plan-gauge svg {
+  filter: drop-shadow(0 0 6px rgba(46, 204, 113, 0.2));
+}
+
+.plan-gauge-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.plan-gauge-fact {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+/* ═══════════════════════════════════════════════════════════ */
+/* ═══ DRILL-DOWN MODAL ═════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════ */
+
+.drilldown-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 5vh;
+  animation: ddOverlayIn 0.2s ease-out;
+}
+
+@keyframes ddOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.drilldown-modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  width: 90%;
+  max-width: 720px;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: var(--gap-xl);
+  position: relative;
+  animation: ddSlideIn 0.3s ease-out;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+@keyframes ddSlideIn {
+  from { opacity: 0; transform: translateY(-20px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.drilldown-modal::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent-green), var(--accent-blue));
+}
+
+.drilldown-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--gap-lg);
+}
+
+.drilldown-header h3 {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.drilldown-close {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.drilldown-close:hover {
+  background: var(--accent-red-dim);
+  color: var(--accent-red);
+  border-color: var(--accent-red);
+}
+
+.drilldown-bar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-md);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.drilldown-bar-row:hover {
+  background: var(--bg-glass);
+  padding-left: 8px;
+  border-radius: var(--radius-sm);
+}
+
+.drilldown-bar-name {
+  width: 140px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.drilldown-bar-track {
+  flex: 1;
+  height: 24px;
+  background: var(--bg-glass);
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+}
+
+.drilldown-bar-fill {
+  height: 100%;
+  border-radius: 12px;
+  transition: width 0.6s ease-out;
+  min-width: 4px;
+}
+
+.drilldown-bar-value {
+  width: 100px;
+  text-align: right;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.drilldown-bar-delta {
+  width: 65px;
+  text-align: right;
+  font-size: 0.78rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.drilldown-footer {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--gap-lg);
+  padding-top: var(--gap-md);
+  border-top: 1px solid var(--border-color);
+}
+
+/* Make KPI cards clickable for drill-down */
+.kpi-card.clickable {
+  cursor: pointer;
+}
+
+.kpi-card.clickable:hover {
+  border-color: var(--accent-green);
+  box-shadow: var(--shadow-glow-green);
+}
+
+.kpi-card.clickable::after {
+  content: '↗';
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.kpi-card.clickable:hover::after {
+  opacity: 1;
+  color: var(--accent-green);
+}
+
+/* ═══════════════════════════════════════════════════════════ */
+/* ═══ CUSTOMER ANALYTICS PAGE ══════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════ */
+
+.customer-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: var(--gap-md);
+  margin-bottom: var(--gap-lg);
+}
+
+.customer-charts-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--gap-md);
+  margin-bottom: var(--gap-lg);
+}
+
+.customer-chart-card {
+  min-height: 320px;
+}
+
+/* Channel distribution list for pie chart */
+.channel-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: var(--gap-md);
+}
+
+.channel-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+}
+
+.channel-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.channel-legend-value {
+  margin-left: auto;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Dual chart styling */
+.dual-chart-legend {
+  display: flex;
+  gap: var(--gap-md);
+  justify-content: center;
+  margin-bottom: var(--gap-sm);
+}
+
+.dual-chart-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.dual-chart-legend-dot {
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+/* ═══ RESPONSIVE FOR NEW FEATURES ══════════════════════════ */
+@media (max-width: 768px) {
+  .pulse-block {
+    grid-template-columns: 1fr;
+  }
+  .plan-gauges {
+    justify-content: center;
+  }
+  .drilldown-modal {
+    width: 95%;
+    padding: var(--gap-md);
+    max-height: 85vh;
+  }
+  .drilldown-bar-name {
+    width: 100px;
+    font-size: 0.78rem;
+  }
+  .drilldown-bar-value {
+    width: 75px;
+    font-size: 0.78rem;
+  }
+  .drilldown-bar-delta {
+    display: none;
+  }
+  .customer-charts-grid {
+    grid-template-columns: 1fr;
+  }
+  .customer-kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }

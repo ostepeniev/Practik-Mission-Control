@@ -1,10 +1,10 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import NotificationBell from '@/app/components/NotificationBell';
 import {
-  AreaChart, Area, LineChart, Line, BarChart, Bar,
+  AreaChart, Area, LineChart, Line, BarChart, Bar, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 
@@ -30,29 +30,60 @@ function fmtDelta(d, inverse) {
 // ─── Tooltip ────────────────────────────────────────────────
 function ChartTooltip({ active, payload, label, format }) {
   if (!active || !payload?.length) return null;
-  const val = payload[0].value;
   return (
     <div style={{
       background: 'rgba(17,24,39,0.95)', border: '1px solid rgba(255,255,255,0.1)',
       borderRadius: '8px', padding: '8px 12px', fontSize: '0.8rem'
     }}>
       <div style={{ color: '#94A3B8', marginBottom: '2px' }}>{label}</div>
-      <div style={{ color: '#F1F5F9', fontWeight: 700 }}>
-        {format === 'percent' ? fmtPct(val) : fmtCurrency(val)}
-      </div>
+      {payload.map((p, i) => (
+        <div key={i} style={{ color: p.color || '#F1F5F9', fontWeight: 700, fontSize: '0.82rem' }}>
+          {p.name === 'margin' ? fmtPct(p.value) : fmtCurrency(p.value)}
+        </div>
+      ))}
     </div>
   );
 }
 
-// ─── KPI Card Component ────────────────────────────────────
-function KPICard({ title, icon, metric }) {
+// ─── Plan/Fact SVG Gauge ────────────────────────────────────
+function PlanGauge({ label, pct, fact, format }) {
+  const clamped = Math.min(pct || 0, 120);
+  const radius = 36;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (Math.min(clamped, 100) / 100) * circumference;
+  const color = clamped >= 100 ? '#2ECC71' : clamped >= 80 ? '#F39C12' : '#E74C3C';
+  const factStr = format === 'currency' ? fmtCurrency(fact) : format === 'percent' ? fmtPct(fact) : fmtNum(fact);
+
+  return (
+    <div className="plan-gauge">
+      <svg width="84" height="84" viewBox="0 0 84 84">
+        <circle cx="42" cy="42" r={radius} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="6" />
+        <circle cx="42" cy="42" r={radius} fill="none" stroke={color} strokeWidth="6"
+          strokeDasharray={circumference} strokeDashoffset={offset}
+          strokeLinecap="round" transform="rotate(-90 42 42)"
+          style={{ transition: 'stroke-dashoffset 1s ease-out' }} />
+        <text x="42" y="40" textAnchor="middle" fill={color} fontSize="16" fontWeight="800">
+          {Math.round(clamped)}%
+        </text>
+        <text x="42" y="54" textAnchor="middle" fill="#64748B" fontSize="8" fontWeight="500">
+          ПЛАН
+        </text>
+      </svg>
+      <div className="plan-gauge-label">{label}</div>
+      <div className="plan-gauge-fact">{factStr}</div>
+    </div>
+  );
+}
+
+// ─── KPI Card Component (clickable for drill-down) ─────────
+function KPICard({ title, icon, metric, onClick }) {
   if (!metric) return null;
   const val = metric.format === 'currency' ? fmtCurrency(metric.value)
     : metric.format === 'percent' ? fmtPct(metric.value)
     : fmtNum(metric.value, metric.unit);
   const delta = fmtDelta(metric.delta_pct, metric.inverse);
   return (
-    <div className="kpi-card">
+    <div className={`kpi-card${onClick ? ' clickable' : ''}`} onClick={onClick}>
       <div className="kpi-icon">{icon}</div>
       <div className="kpi-label">{title}</div>
       <div className="kpi-value">{val}</div>
@@ -67,6 +98,58 @@ function KPICard({ title, icon, metric }) {
 function StatusBadge({ status }) {
   const labels = { normal: 'Норма', attention: 'Увага', risk: 'Ризик', critical: 'Критично', new: 'Новий' };
   return <span className={`status-badge ${status}`}>{labels[status] || status}</span>;
+}
+
+// ─── Drill-Down Modal ──────────────────────────────────────
+function DrillDownModal({ title, items, onClose, onDrillDeeper, valueFmt, router }) {
+  if (!items) return null;
+  const maxVal = Math.max(...items.map(i => i.value || i.revenue || 0), 1);
+  const colors = ['#2ECC71', '#3498DB', '#9B59B6', '#F39C12', '#E74C3C', '#1ABC9C', '#E67E22', '#2980B9', '#8E44AD'];
+
+  return (
+    <div className="drilldown-overlay" onClick={onClose}>
+      <div className="drilldown-modal" onClick={e => e.stopPropagation()}>
+        <div className="drilldown-header">
+          <h3>{title}</h3>
+          <button className="drilldown-close" onClick={onClose}>✕</button>
+        </div>
+
+        {items.map((item, i) => {
+          const val = item.value || item.revenue || item.count || 0;
+          const pct = (val / maxVal) * 100;
+          const delta = item.delta_pct;
+          const deltaD = delta != null ? fmtDelta(delta) : null;
+
+          return (
+            <div key={item.id || i} className="drilldown-bar-row"
+              onClick={() => onDrillDeeper?.(item)}>
+              <div className="drilldown-bar-name">{item.name}</div>
+              <div className="drilldown-bar-track">
+                <div className="drilldown-bar-fill"
+                  style={{ width: pct + '%', background: colors[i % colors.length] }} />
+              </div>
+              <div className="drilldown-bar-value">
+                {valueFmt === 'count' ? val : fmtCurrency(val)}
+              </div>
+              {deltaD && (
+                <div className={`drilldown-bar-delta kpi-delta ${deltaD.cls}`}>
+                  {deltaD.text}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {onDrillDeeper && (
+          <div className="drilldown-footer">
+            <button className="btn btn-secondary btn-sm" onClick={onClose}>
+              Закрити
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ─── Main Dashboard ────────────────────────────────────────
@@ -96,6 +179,13 @@ export default function DashboardPage() {
   const [productSearch, setProductSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [productPage, setProductPage] = useState(1);
+  // New states for features
+  const [pulseSummary, setPulseSummary] = useState(null);
+  const [pulseLoading, setPulseLoading] = useState(false);
+  const [drilldown, setDrilldown] = useState(null); // { metric, title, items }
+  const [drilldownLoading, setDrilldownLoading] = useState(false);
+  // Dual chart merged data  
+  const [dualChartData, setDualChartData] = useState([]);
 
   useEffect(() => {
     const u = api.getUser();
@@ -143,6 +233,19 @@ export default function DashboardPage() {
       setAlerts(al?.alerts || []);
       setInsights(ins?.insights || []);
 
+      // Merge revenue + margin into dual chart data
+      const revMap = {};
+      (rev?.series || []).forEach(r => { revMap[r.date] = r.value; });
+      const merged = (margin?.series || []).map(m => ({
+        date: m.date, revenue: revMap[m.date] || 0, margin: m.value,
+      }));
+      setDualChartData(merged);
+
+      // Load AI Pulse (non-blocking)
+      if (ov?.metrics) {
+        loadPulse(ov.metrics, ov.plan_fact, ov.period);
+      }
+
       // Load complaints KPI
       try {
         const cSumm = await api.getComplaintsSummary(params);
@@ -158,6 +261,74 @@ export default function DashboardPage() {
       console.error('Load error:', e);
     }
     setLoading(false);
+  }
+
+  async function loadPulse(metrics, planFact, period) {
+    setPulseLoading(true);
+    try {
+      const res = await api.getAIPulse(metrics, planFact, period);
+      setPulseSummary(res.summary);
+    } catch (e) {
+      setPulseSummary(null);
+    }
+    setPulseLoading(false);
+  }
+
+  // ─── Drill-Down handlers ────────────────────────────────
+  const getDateParams = useCallback(() => {
+    const now = new Date();
+    let date_from, date_to = now.toISOString().slice(0, 10);
+    if (period === 'mtd') date_from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+    else if (period === '7d') date_from = new Date(now - 7 * 86400000).toISOString().slice(0, 10);
+    else if (period === '30d') date_from = new Date(now - 30 * 86400000).toISOString().slice(0, 10);
+    else date_from = new Date(now - 90 * 86400000).toISOString().slice(0, 10);
+    return { date_from, date_to };
+  }, [period]);
+
+  async function openDrilldown(metric) {
+    setDrilldownLoading(true);
+    const params = getDateParams();
+    let title = '', groupBy = '', valueFmt = 'currency';
+
+    switch (metric) {
+      case 'revenue': title = '💰 Виторг по категоріях'; groupBy = 'category'; break;
+      case 'margin': title = '📉 Найбільше падіння маржі'; groupBy = 'margin_drop'; break;
+      case 'orders': title = '🛒 Замовлення по каналах'; groupBy = 'channel'; break;
+      case 'returns': title = '↩️ Повернення по причинах'; groupBy = 'return_reason'; valueFmt = 'count'; break;
+      case 'volume': title = '📦 Обсяг по категоріях'; groupBy = 'category'; break;
+      default: title = '📊 Breakdown'; groupBy = 'category';
+    }
+
+    try {
+      const res = await api.getBreakdown({ ...params, metric, group_by: groupBy });
+      setDrilldown({
+        metric, title, items: res.items, valueFmt,
+        onDrillDeeper: (item) => {
+          if (item.id && groupBy === 'category') {
+            // Level 2: products in this category
+            loadCategoryProducts(item.id, item.name, params);
+          } else if (item.id && typeof item.id === 'number') {
+            router.push(`/products/${item.id}`);
+          }
+        }
+      });
+    } catch (e) {
+      console.error('Drilldown error:', e);
+    }
+    setDrilldownLoading(false);
+  }
+
+  async function loadCategoryProducts(categoryId, categoryName, dateParams) {
+    try {
+      const res = await api.getBreakdown({ ...dateParams, metric: 'revenue', group_by: 'product', category_id: categoryId });
+      setDrilldown({
+        metric: 'product', title: `📦 ${categoryName} — Товари`,
+        items: res.items, valueFmt: 'currency',
+        onDrillDeeper: (item) => router.push(`/products/${item.id}`),
+      });
+    } catch (e) {
+      console.error('Category products error:', e);
+    }
   }
 
   async function handleAskAI(e) {
@@ -189,6 +360,7 @@ export default function DashboardPage() {
   if (!user) return null;
 
   const m = overview?.metrics || {};
+  const pf = overview?.plan_fact;
 
   function navigate(path) {
     setSidebarOpen(false);
@@ -223,11 +395,12 @@ export default function DashboardPage() {
         <div className="sidebar-logo">
           <div>
             <h1>🐾 Practik UA</h1>
-            <span>Analytics Dashboard</span>
+            <span>Mission Control</span>
           </div>
         </div>
         <nav className="sidebar-nav">
           <div className="nav-item active" onClick={() => navigate('/')}>📊 Аналітика товарів</div>
+          <div className="nav-item" onClick={() => navigate('/customers')} style={{ cursor: 'pointer' }}>👤 Клієнти</div>
           <div className="nav-item" onClick={() => navigate('/marketing')} style={{ cursor: 'pointer' }}>📈 Маркетинг</div>
           <div className="nav-item" onClick={() => navigate('/warehouse')} style={{ cursor: 'pointer' }}>🏭 Склад</div>
           <div className="nav-item" onClick={() => navigate('/finance')} style={{ cursor: 'pointer' }}>💰 Фінанси</div>
@@ -285,33 +458,82 @@ export default function DashboardPage() {
           <div className="loading-spinner"><div className="spinner" /></div>
         ) : (
           <>
-            {/* KPI Cards */}
+            {/* ═══ CEO PULSE BLOCK ═══ */}
+            <div className="pulse-block">
+              <div className="pulse-summary">
+                <div className="pulse-summary-label">
+                  <span className="pulse-dot" />
+                  Пульс бізнесу
+                </div>
+                <div className="pulse-summary-text">
+                  {pulseLoading ? (
+                    <span className="pulse-loading">⏳ Аналізую показники...</span>
+                  ) : pulseSummary ? (
+                    pulseSummary
+                  ) : (
+                    <span className="pulse-loading">Завантаження AI-аналізу...</span>
+                  )}
+                </div>
+              </div>
+              {pf && (
+                <div className="plan-gauges">
+                  <PlanGauge label="Виторг" pct={pf.revenue?.pct} fact={pf.revenue?.fact} format="currency" />
+                  <PlanGauge label="Маржа" pct={pf.margin_pct?.pct} fact={pf.margin_pct?.fact} format="percent" />
+                  <PlanGauge label="Замовлення" pct={pf.orders?.pct} fact={pf.orders?.fact} format="number" />
+                </div>
+              )}
+            </div>
+
+            {/* KPI Cards (clickable for drill-down) */}
             <div className="kpi-grid">
-              <KPICard title="Виторг MTD" icon="💰" metric={m.revenue_mtd} />
-              <KPICard title="Валова маржа %" icon="📈" metric={m.gross_margin_pct} />
+              <KPICard title="Виторг MTD" icon="💰" metric={m.revenue_mtd}
+                onClick={() => openDrilldown('revenue')} />
+              <KPICard title="Валова маржа %" icon="📈" metric={m.gross_margin_pct}
+                onClick={() => openDrilldown('margin')} />
               <KPICard title="Валова маржа ₴" icon="💵" metric={m.gross_margin_amount} />
-              <KPICard title="Обсяг продажів" icon="📦" metric={m.sales_volume} />
-              <KPICard title="К-ть замовлень" icon="🛒" metric={m.order_count} />
-              <KPICard title="Повернення %" icon="↩️" metric={m.returns_pct} />
+              <KPICard title="Обсяг продажів" icon="📦" metric={m.sales_volume}
+                onClick={() => openDrilldown('volume')} />
+              <KPICard title="К-ть замовлень" icon="🛒" metric={m.order_count}
+                onClick={() => openDrilldown('orders')} />
+              <KPICard title="Середній чек" icon="🧾" metric={m.avg_check} />
+              <KPICard title="Повернення %" icon="↩️" metric={m.returns_pct}
+                onClick={() => openDrilldown('returns')} />
               {complaintKpi && (
-                <div className="kpi-card">
+                <div className="kpi-card clickable" onClick={() => router.push('/complaints')}>
                   <div className="kpi-icon">📋</div>
                   <div className="kpi-label">Скарги</div>
                   <div className="kpi-value">{complaintKpi.total}</div>
-                  <span className={`kpi-delta ${complaintKpi.delta_pct > 0 ? 'negative' : complaintKpi.delta_pct < 0 ? 'positive' : 'neutral'}`}
-                        onClick={() => router.push('/complaints')} style={{ cursor: 'pointer' }}>
+                  <span className={`kpi-delta ${complaintKpi.delta_pct > 0 ? 'negative' : complaintKpi.delta_pct < 0 ? 'positive' : 'neutral'}`}>
                     {complaintKpi.delta_pct > 0 ? '▲' : complaintKpi.delta_pct < 0 ? '▼' : '—'} {complaintKpi.delta_pct > 0 ? '+' : ''}{complaintKpi.delta_pct}%
+                  </span>
+                </div>
+              )}
+              {m.customers && (
+                <div className="kpi-card clickable" onClick={() => router.push('/customers')}>
+                  <div className="kpi-icon">👥</div>
+                  <div className="kpi-label">Клієнти</div>
+                  <div className="kpi-value">{m.customers.total}</div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                    🆕 {m.customers.new} · 🔄 {m.customers.returning}
                   </span>
                 </div>
               )}
             </div>
 
-            {/* Charts Row 1 */}
+            {/* Dual-Axis Chart: Revenue (bars) + Margin (line) */}
             <div className="charts-grid">
               <div className="card chart-card">
-                <div className="card-title">📈 Виторг по днях</div>
+                <div className="card-title">📈 Виторг та маржинальність по днях</div>
+                <div className="dual-chart-legend">
+                  <div className="dual-chart-legend-item">
+                    <div className="dual-chart-legend-dot" style={{ background: '#2ECC71' }} /> Виторг
+                  </div>
+                  <div className="dual-chart-legend-item">
+                    <div className="dual-chart-legend-dot" style={{ background: '#3498DB' }} /> Маржа %
+                  </div>
+                </div>
                 <ResponsiveContainer width="100%" height={260}>
-                  <AreaChart data={revenueSeries}>
+                  <ComposedChart data={dualChartData}>
                     <defs>
                       <linearGradient id="greenGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#2ECC71" stopOpacity={0.3}/>
@@ -320,43 +542,15 @@ export default function DashboardPage() {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                     <XAxis dataKey="date" tick={{ fill: '#64748B', fontSize: 11 }} tickFormatter={d => d?.slice(5)} />
-                    <YAxis tick={{ fill: '#64748B', fontSize: 11 }} tickFormatter={v => v >= 1000 ? (v/1000).toFixed(0)+'K' : v} />
-                    <Tooltip content={<ChartTooltip format="currency" />} />
-                    <Area type="monotone" dataKey="value" stroke="#2ECC71" strokeWidth={2}
-                          fill="url(#greenGrad)" />
-                  </AreaChart>
+                    <YAxis yAxisId="left" tick={{ fill: '#64748B', fontSize: 11 }} tickFormatter={v => v >= 1000 ? (v/1000).toFixed(0)+'K' : v} />
+                    <YAxis yAxisId="right" orientation="right" tick={{ fill: '#3498DB', fontSize: 11 }} tickFormatter={v => v+'%'} domain={['auto', 'auto']} />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Bar yAxisId="left" dataKey="revenue" name="revenue" fill="url(#greenGrad)" stroke="#2ECC71" radius={[2, 2, 0, 0]} />
+                    <Line yAxisId="right" dataKey="margin" name="margin" stroke="#3498DB" strokeWidth={2} dot={false} />
+                  </ComposedChart>
                 </ResponsiveContainer>
               </div>
               <div className="card chart-card">
-                <div className="card-title">📊 Маржинальність по днях</div>
-                <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={marginSeries}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                    <XAxis dataKey="date" tick={{ fill: '#64748B', fontSize: 11 }} tickFormatter={d => d?.slice(5)} />
-                    <YAxis tick={{ fill: '#64748B', fontSize: 11 }} domain={['auto', 'auto']} tickFormatter={v => v+'%'} />
-                    <Tooltip content={<ChartTooltip format="percent" />} />
-                    <Line type="monotone" dataKey="value" stroke="#3498DB" strokeWidth={2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Charts Row 2: Top Products + Alerts */}
-            <div className="charts-row">
-              <div className="card chart-card">
-                <div className="card-title">🏆 Топ-5 SKU по виручці</div>
-                <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={topProducts} layout="vertical" margin={{ left: 100 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                    <XAxis type="number" tick={{ fill: '#64748B', fontSize: 11 }} tickFormatter={v => v >= 1000 ? (v/1000).toFixed(0)+'K' : v} />
-                    <YAxis type="category" dataKey="name" tick={{ fill: '#94A3B8', fontSize: 11 }} width={100}
-                           tickFormatter={n => n?.length > 18 ? n.slice(0,18)+'…' : n} />
-                    <Tooltip content={<ChartTooltip format="currency" />} />
-                    <Bar dataKey="revenue" fill="#2ECC71" radius={[0, 4, 4, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="card">
                 <div className="card-title">🔔 Алерти & AI-гіпотези</div>
                 <div className="alert-list">
                   {alerts.length === 0 ? (
@@ -388,6 +582,52 @@ export default function DashboardPage() {
                     </div>
                   ))}
                 </div>
+              </div>
+            </div>
+
+            {/* Charts Row 2: Top Products */}
+            <div className="charts-row">
+              <div className="card chart-card">
+                <div className="card-title">🏆 Топ-5 SKU по виручці</div>
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={topProducts} layout="vertical" margin={{ left: 100 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                    <XAxis type="number" tick={{ fill: '#64748B', fontSize: 11 }} tickFormatter={v => v >= 1000 ? (v/1000).toFixed(0)+'K' : v} />
+                    <YAxis type="category" dataKey="name" tick={{ fill: '#94A3B8', fontSize: 11 }} width={100}
+                           tickFormatter={n => n?.length > 18 ? n.slice(0,18)+'…' : n} />
+                    <Tooltip content={<ChartTooltip format="currency" />} />
+                    <Bar dataKey="revenue" fill="#2ECC71" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="card">
+                <div className="card-title">👤 Клієнтська база</div>
+                {m.customers && (
+                  <div style={{ padding: '8px 0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                      <div>
+                        <div style={{ fontSize: '2rem', fontWeight: 800 }}>{m.customers.total}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>активних клієнтів</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--accent-green)' }}>{m.customers.returning_pct}%</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>повторних</div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', height: '8px', borderRadius: '4px', overflow: 'hidden', marginBottom: '12px' }}>
+                      <div style={{ flex: m.customers.returning, background: 'var(--accent-green)', borderRadius: '4px' }} />
+                      <div style={{ flex: m.customers.new, background: 'var(--accent-blue)', borderRadius: '4px' }} />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                      <span style={{ color: 'var(--accent-green)' }}>🔄 Повторні: {m.customers.returning}</span>
+                      <span style={{ color: 'var(--accent-blue)' }}>🆕 Нові: {m.customers.new}</span>
+                    </div>
+                    <button className="btn btn-secondary btn-sm" style={{ width: '100%', marginTop: '16px' }}
+                      onClick={() => router.push('/customers')}>
+                      Детальна аналітика →
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -525,7 +765,7 @@ export default function DashboardPage() {
               )}
             </div>
 
-            {/* Bottom: Customers + AI */}
+            {/* Bottom: Top Customers + AI */}
             <div className="bottom-grid">
               <div className="card">
                 <div className="card-title">👥 Топ-5 клієнтів</div>
@@ -605,6 +845,18 @@ export default function DashboardPage() {
           </>
         )}
       </main>
+
+      {/* ═══ DRILL-DOWN MODAL ═══ */}
+      {drilldown && (
+        <DrillDownModal
+          title={drilldown.title}
+          items={drilldown.items}
+          valueFmt={drilldown.valueFmt}
+          onClose={() => setDrilldown(null)}
+          onDrillDeeper={drilldown.onDrillDeeper}
+          router={router}
+        />
+      )}
     </div>
   );
 }

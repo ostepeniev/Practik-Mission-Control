@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import NotificationBell from '@/app/components/NotificationBell';
@@ -11,8 +11,8 @@ import {
 // ─── Helpers ────────────────────────────────────────────────
 function fmtCurrency(v) {
   if (v == null) return '—';
-  if (v >= 1000000) return (v / 1000000).toFixed(1) + 'M ₴';
-  if (v >= 1000) return (v / 1000).toFixed(1) + 'K ₴';
+  if (Math.abs(v) >= 1000000) return (v / 1000000).toFixed(1) + 'M ₴';
+  if (Math.abs(v) >= 1000) return (v / 1000).toFixed(1) + 'K ₴';
   return Math.round(v) + ' ₴';
 }
 function fmtNum(v) { return v == null ? '—' : v.toLocaleString('uk-UA'); }
@@ -34,11 +34,11 @@ function ChartTooltip({ active, payload, label, formatter }) {
   return (
     <div style={{
       background: 'rgba(17,24,39,0.95)', border: '1px solid rgba(255,255,255,0.1)',
-      borderRadius: '8px', padding: '10px 14px', fontSize: '0.8rem'
+      borderRadius: '8px', padding: '10px 14px', fontSize: '0.8rem', maxWidth: 300
     }}>
-      <div style={{ color: '#94A3B8', marginBottom: '4px' }}>{label}</div>
-      {payload.map((p, i) => (
-        <div key={i} style={{ color: p.color || '#F1F5F9', fontWeight: 600, marginBottom: '2px' }}>
+      <div style={{ color: '#94A3B8', marginBottom: '4px', fontWeight: 600 }}>{label}</div>
+      {payload.filter(p => p.value != null).map((p, i) => (
+        <div key={i} style={{ color: p.color || '#F1F5F9', fontWeight: 500, marginBottom: '2px', fontSize: '0.78rem' }}>
           <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: p.color, marginRight: 6 }} />
           {p.name}: {formatter ? formatter(p.value) : p.value?.toLocaleString('uk-UA')}
         </div>
@@ -47,14 +47,13 @@ function ChartTooltip({ active, payload, label, formatter }) {
   );
 }
 
-// Channel colors
 const CHANNEL_COLORS = {
   google_ads: '#4285F4',
   meta_shark: '#1877F2',
   meta_buntar: '#E4405F',
   tiktok_ads: '#00F2EA',
   viber: '#7360F2',
-  instagram_bio: '#E4405F',
+  instagram_bio: '#C13584',
   google_organic: '#34A853',
 };
 
@@ -67,24 +66,35 @@ export default function MarketingPage() {
   const [channels, setChannels] = useState(null);
   const [weeks, setWeeks] = useState(null);
   const [alerts, setAlerts] = useState([]);
+  const [periods, setPeriods] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview'); // overview | channels | site
+  const [activeTab, setActiveTab] = useState('overview');
+  const [period, setPeriod] = useState('last_week');
+  const [weekPickerOpen, setWeekPickerOpen] = useState(false);
 
   useEffect(() => {
     const u = api.getUser();
     if (!u || !api.token) { router.push('/login'); return; }
     setUser(u);
-    loadData();
+    loadPeriods();
+    loadData('last_week');
   }, []);
 
-  async function loadData() {
+  async function loadPeriods() {
+    try {
+      const p = await api.getMarketingPeriods();
+      setPeriods(p);
+    } catch (e) { console.error(e); }
+  }
+
+  const loadData = useCallback(async (p) => {
     setLoading(true);
     try {
       const [ov, ch, wk, al] = await Promise.all([
-        api.getMarketingOverview(),
-        api.getMarketingChannels(),
+        api.getMarketingOverview(p),
+        api.getMarketingChannels(p),
         api.getMarketingWeeks(),
         api.getMarketingAlerts(),
       ]);
@@ -96,6 +106,12 @@ export default function MarketingPage() {
       console.error('Marketing load error:', e);
     }
     setLoading(false);
+  }, []);
+
+  function changePeriod(newPeriod) {
+    setPeriod(newPeriod);
+    setWeekPickerOpen(false);
+    loadData(newPeriod);
   }
 
   async function handleSync() {
@@ -105,7 +121,8 @@ export default function MarketingPage() {
       const result = await api.syncMarketingSheets();
       setSyncResult(result);
       if (result.success) {
-        await loadData();
+        await loadPeriods();
+        await loadData(period);
       }
     } catch (e) {
       setSyncResult({ success: false, error: e.message });
@@ -115,20 +132,20 @@ export default function MarketingPage() {
 
   if (!user) return null;
 
-  function navigate(path) {
-    setSidebarOpen(false);
-    router.push(path);
-  }
+  function navigate(path) { setSidebarOpen(false); router.push(path); }
 
   const kpi = overview?.kpi || {};
   const weeklyData = weeks?.weeks || [];
   const channelList = channels?.channels || [];
-  const channelTrends = weeks?.channel_trends || {};
   const trendChannels = weeks?.channels || [];
+
+  // Filtered channels that have ROAS data (paid only)
+  const paidChannels = trendChannels.filter(c =>
+    weeklyData.some(w => w[`roas_${c.name}`] != null && w[`roas_${c.name}`] > 0)
+  );
 
   return (
     <div className="app-layout">
-      {/* Mobile Header */}
       <header className="mobile-header">
         <button className={`burger-btn${sidebarOpen ? ' open' : ''}`}
           onClick={() => setSidebarOpen(o => !o)} aria-label="Меню">
@@ -141,13 +158,13 @@ export default function MarketingPage() {
       <div className={`sidebar-overlay${sidebarOpen ? ' visible' : ''}`}
         onClick={() => setSidebarOpen(false)} />
 
-      {/* Sidebar */}
       <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
         <div className="sidebar-logo">
           <div><h1>🐾 Practik UA</h1><span>Analytics Dashboard</span></div>
         </div>
         <nav className="sidebar-nav">
           <div className="nav-item" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>📊 Аналітика товарів</div>
+          <div className="nav-item" onClick={() => navigate('/customers')} style={{ cursor: 'pointer' }}>👤 Клієнти</div>
           <div className="nav-item active">📈 Маркетинг</div>
           <div className="nav-item" onClick={() => navigate('/warehouse')} style={{ cursor: 'pointer' }}>🏭 Склад</div>
           <div className="nav-item" onClick={() => navigate('/finance')} style={{ cursor: 'pointer' }}>💰 Фінанси</div>
@@ -169,19 +186,22 @@ export default function MarketingPage() {
         </div>
       </aside>
 
-      {/* Main */}
       <main className="main-content">
+        {/* Header */}
         <div className="page-header">
           <div>
             <h2>📈 Маркетинг</h2>
-            <p>Щотижневі показники рекламних каналів · Тиждень: {overview?.latest_week || '—'}</p>
+            <p>
+              {overview?.period_label || '—'}
+              {overview?.weeks_count > 1 && ` · ${overview.weeks_count} тижнів`}
+            </p>
           </div>
           <div className="header-actions">
             <NotificationBell />
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               {overview?.last_sync && (
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginRight: '8px' }}>
-                  Останній sync: {new Date(overview.last_sync.created_at).toLocaleString('uk-UA')}
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  Sync: {new Date(overview.last_sync.created_at).toLocaleString('uk-UA')}
                 </span>
               )}
               <button className="btn btn-primary btn-sm" onClick={handleSync} disabled={syncing}>
@@ -194,9 +214,46 @@ export default function MarketingPage() {
         {syncResult && (
           <div className={`sync-result ${syncResult.success ? 'success' : 'error'}`}>
             {syncResult.success ? `✅ ${syncResult.message}` : `❌ ${syncResult.error}`}
-            <button onClick={() => setSyncResult(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}>✕</button>
+            <button onClick={() => setSyncResult(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '1rem' }}>✕</button>
           </div>
         )}
+
+        {/* Period Selector */}
+        <div className="filters-bar" style={{ marginBottom: '12px' }}>
+          <div className="period-selector">
+            {/* Presets */}
+            {[
+              ['last_week', '📅 Тиждень'],
+              ['month', '📊 Місяць'],
+              ['quarter', '📈 Квартал'],
+              ['all', '🔄 Весь час'],
+            ].map(([key, label]) => (
+              <button key={key}
+                className={`filter-chip ${period === key ? 'active' : ''}`}
+                onClick={() => changePeriod(key)}>{label}</button>
+            ))}
+
+            {/* Individual week picker */}
+            <div style={{ position: 'relative' }}>
+              <button
+                className={`filter-chip ${period.startsWith('week:') ? 'active' : ''}`}
+                onClick={() => setWeekPickerOpen(o => !o)}>
+                {period.startsWith('week:') ? `📌 ${period.slice(5)}` : '📌 Обрати тиждень'}
+              </button>
+              {weekPickerOpen && periods?.weeks && (
+                <div className="week-picker-dropdown">
+                  {periods.weeks.map(w => (
+                    <button key={w}
+                      className={`week-picker-item ${period === `week:${w}` ? 'active' : ''}`}
+                      onClick={() => changePeriod(`week:${w}`)}>
+                      {w}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
 
         {/* Tab Switcher */}
         <div className="filters-bar">
@@ -236,47 +293,28 @@ export default function MarketingPage() {
 
                 {/* KPI Cards */}
                 <div className="kpi-grid marketing-kpi">
-                  <div className="kpi-card">
-                    <div className="kpi-icon">📊</div>
-                    <div className="kpi-label">ROAS тотал</div>
-                    <div className="kpi-value">{fmtRoas(kpi.roas?.value)}</div>
-                    <DeltaBadge value={kpi.roas?.delta} />
-                  </div>
-                  <div className="kpi-card">
-                    <div className="kpi-icon">💰</div>
-                    <div className="kpi-label">Бюджет тотал</div>
-                    <div className="kpi-value">{fmtCurrency(kpi.budget?.value)}</div>
-                    <DeltaBadge value={kpi.budget?.delta} />
-                  </div>
-                  <div className="kpi-card">
-                    <div className="kpi-icon">💵</div>
-                    <div className="kpi-label">Виручка тотал</div>
-                    <div className="kpi-value">{fmtCurrency(kpi.revenue?.value)}</div>
-                    <DeltaBadge value={kpi.revenue?.delta} />
-                  </div>
-                  <div className="kpi-card">
-                    <div className="kpi-icon">🎯</div>
-                    <div className="kpi-label">CAC</div>
-                    <div className="kpi-value">{fmtCurrency(kpi.cac?.value)}</div>
-                    <DeltaBadge value={kpi.cac?.delta} inverse />
-                  </div>
-                  <div className="kpi-card">
-                    <div className="kpi-icon">🛒</div>
-                    <div className="kpi-label">Відправлень</div>
-                    <div className="kpi-value">{fmtNum(kpi.shipped_orders?.value)}</div>
-                    <DeltaBadge value={kpi.shipped_orders?.delta} />
-                  </div>
-                  <div className="kpi-card">
-                    <div className="kpi-icon">👤</div>
-                    <div className="kpi-label">Нових клієнтів</div>
-                    <div className="kpi-value">{fmtNum(kpi.new_clients?.value)}</div>
-                    <DeltaBadge value={kpi.new_clients?.delta} />
-                  </div>
+                  {[
+                    ['📊', 'ROAS тотал', fmtRoas(kpi.roas?.value), kpi.roas?.delta, false],
+                    ['💰', 'Бюджет тотал', fmtCurrency(kpi.budget?.value), kpi.budget?.delta, false],
+                    ['💵', 'Виручка тотал', fmtCurrency(kpi.revenue?.value), kpi.revenue?.delta, false],
+                    ['🎯', 'CAC', fmtCurrency(kpi.cac?.value), kpi.cac?.delta, true],
+                    ['🛒', 'Відправлень', fmtNum(kpi.shipped_orders?.value), kpi.shipped_orders?.delta, false],
+                    ['👤', 'Нових клієнтів', fmtNum(kpi.new_clients?.value), kpi.new_clients?.delta, false],
+                    ['📦', 'Вхідних', fmtNum(kpi.incoming_orders?.value), kpi.incoming_orders?.delta, false],
+                    ['💳', 'Середній чек', fmtCurrency(kpi.avg_check?.value), kpi.avg_check?.delta, false],
+                    ['📈', 'Конверсія відпр.', fmtPct(kpi.ship_conversion?.value), kpi.ship_conversion?.delta, false],
+                  ].map(([icon, label, value, delta, inverse], i) => (
+                    <div key={i} className="kpi-card">
+                      <div className="kpi-icon">{icon}</div>
+                      <div className="kpi-label">{label}</div>
+                      <div className="kpi-value">{value}</div>
+                      <DeltaBadge value={delta} inverse={inverse} />
+                    </div>
+                  ))}
                 </div>
 
-                {/* Charts */}
+                {/* Charts Row 1: ROAS by channel & Total ROAS */}
                 <div className="charts-grid">
-                  {/* ROAS by channel */}
                   <div className="card chart-card">
                     <div className="card-title">📈 ROAS CRM по каналах (тижні)</div>
                     <ResponsiveContainer width="100%" height={300}>
@@ -285,25 +323,23 @@ export default function MarketingPage() {
                         <XAxis dataKey="week_label" tick={{ fill: '#64748B', fontSize: 11 }} />
                         <YAxis tick={{ fill: '#64748B', fontSize: 11 }} />
                         <Tooltip content={<ChartTooltip formatter={v => v?.toFixed(2)} />} />
-                        <Legend wrapperStyle={{ fontSize: '0.75rem' }} />
-                        {trendChannels.filter(c => channelTrends[c.name]?.some(d => d.roas != null && d.roas > 0)).map(c => (
+                        <Legend wrapperStyle={{ fontSize: '0.72rem' }} />
+                        {paidChannels.map(c => (
                           <Line
                             key={c.name}
-                            dataKey={c.name}
+                            type="monotone"
+                            dataKey={`roas_${c.name}`}
                             name={`${c.icon} ${c.display_name}`}
                             stroke={CHANNEL_COLORS[c.name] || '#888'}
                             strokeWidth={2}
                             dot={{ r: 3 }}
-                            data={channelTrends[c.name]}
                             connectNulls
                           />
                         ))}
                       </LineChart>
                     </ResponsiveContainer>
-                    {/* Note: Recharts multi-series from different sources needs reformatted data */}
                   </div>
 
-                  {/* Total ROAS trend */}
                   <div className="card chart-card">
                     <div className="card-title">📉 ROAS тотал (тренд)</div>
                     <ResponsiveContainer width="100%" height={300}>
@@ -324,7 +360,7 @@ export default function MarketingPage() {
                   </div>
                 </div>
 
-                {/* Spend vs Revenue */}
+                {/* Charts Row 2: Spend vs Revenue */}
                 <div className="card chart-card" style={{ marginBottom: '24px' }}>
                   <div className="card-title">💰 Витрати vs Виручка (по тижнях)</div>
                   <ResponsiveContainer width="100%" height={300}>
@@ -339,12 +375,46 @@ export default function MarketingPage() {
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
+
+                {/* Charts Row 3: CAC & New Clients */}
+                <div className="charts-grid">
+                  <div className="card chart-card">
+                    <div className="card-title">🎯 CAC (вартість залучення) по тижнях</div>
+                    <ResponsiveContainer width="100%" height={260}>
+                      <AreaChart data={weeklyData}>
+                        <defs>
+                          <linearGradient id="cacGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#EF4444" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#EF4444" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                        <XAxis dataKey="week_label" tick={{ fill: '#64748B', fontSize: 11 }} />
+                        <YAxis tick={{ fill: '#64748B', fontSize: 11 }} />
+                        <Tooltip content={<ChartTooltip formatter={fmtCurrency} />} />
+                        <Area type="monotone" dataKey="cac" name="CAC" stroke="#EF4444" strokeWidth={2} fill="url(#cacGrad)" dot={{ r: 3 }} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="card chart-card">
+                    <div className="card-title">👤 Нові клієнти по тижнях</div>
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart data={weeklyData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                        <XAxis dataKey="week_label" tick={{ fill: '#64748B', fontSize: 11 }} />
+                        <YAxis tick={{ fill: '#64748B', fontSize: 11 }} />
+                        <Tooltip content={<ChartTooltip />} />
+                        <Bar dataKey="new_clients" name="Нові клієнти" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
               </>
             )}
 
             {activeTab === 'channels' && (
               <div className="card data-table-wrapper">
-                <div className="card-title">📡 Канали — тиждень {channels?.latest_week || '—'}</div>
+                <div className="card-title">📡 Канали — {channels?.period_label || '—'}</div>
                 <div className="table-scroll">
                   <table className="data-table marketing-channels-table">
                     <thead>
@@ -405,10 +475,7 @@ export default function MarketingPage() {
                         <td>{fmtCurrency(channelList.reduce((s, c) => s + (c.crm_revenue || 0), 0))}</td>
                         <td>—</td>
                         <td>
-                          <span style={{
-                            color: kpi.roas?.value < 10 ? '#F59E0B' : '#2ECC71',
-                            fontWeight: 700,
-                          }}>
+                          <span style={{ color: (kpi.roas?.value || 0) < 10 ? '#F59E0B' : '#2ECC71', fontWeight: 700 }}>
                             {fmtRoas(kpi.roas?.value)}
                           </span>
                         </td>
@@ -421,7 +488,7 @@ export default function MarketingPage() {
                   </table>
                 </div>
 
-                {/* Per-channel spend chart */}
+                {/* Spend by channel chart */}
                 <div style={{ marginTop: '24px' }}>
                   <div className="card-title" style={{ marginBottom: '12px' }}>💸 Витрати по каналах</div>
                   <ResponsiveContainer width="100%" height={260}>
@@ -430,11 +497,7 @@ export default function MarketingPage() {
                       <XAxis type="number" tick={{ fill: '#64748B', fontSize: 11 }} tickFormatter={v => v >= 1000 ? (v / 1000).toFixed(0) + 'K' : v} />
                       <YAxis type="category" dataKey="display_name" tick={{ fill: '#94A3B8', fontSize: 11 }} width={120} />
                       <Tooltip content={<ChartTooltip formatter={fmtCurrency} />} />
-                      <Bar dataKey="ad_spend" name="Витрати" radius={[0, 4, 4, 0]}>
-                        {channelList.filter(c => c.ad_spend > 0).map((c, i) => (
-                          <rect key={i} fill={CHANNEL_COLORS[c.name] || '#3B82F6'} />
-                        ))}
-                      </Bar>
+                      <Bar dataKey="ad_spend" name="Витрати" fill="#3B82F6" radius={[0, 4, 4, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -446,78 +509,26 @@ export default function MarketingPage() {
                 <div className="card-title">🌐 Дані сайту (GA4)</div>
                 {overview?.site ? (
                   <div className="kpi-grid marketing-kpi" style={{ padding: '16px' }}>
-                    <div className="kpi-card">
-                      <div className="kpi-icon">👥</div>
-                      <div className="kpi-label">Трафік</div>
-                      <div className="kpi-value">{fmtNum(overview.site.total_traffic)}</div>
-                    </div>
-                    <div className="kpi-card">
-                      <div className="kpi-icon">💰</div>
-                      <div className="kpi-label">Ціна 1 користувача</div>
-                      <div className="kpi-value">{overview.site.cost_per_user?.toFixed(2)} ₴</div>
-                    </div>
-                    <div className="kpi-card">
-                      <div className="kpi-icon">🛒</div>
-                      <div className="kpi-label">Кошик → Покупка</div>
-                      <div className="kpi-value">{fmtPct(overview.site.cart_to_purchase_rate)}</div>
-                    </div>
-                    <div className="kpi-card">
-                      <div className="kpi-icon">📈</div>
-                      <div className="kpi-label">Конверсія трафіку</div>
-                      <div className="kpi-value">{fmtPct(overview.site.traffic_conversion_rate)}</div>
-                    </div>
-                    <div className="kpi-card">
-                      <div className="kpi-icon">⏱</div>
-                      <div className="kpi-label">Час на сайті</div>
-                      <div className="kpi-value">{overview.site.avg_session_duration}с</div>
-                    </div>
-                    <div className="kpi-card">
-                      <div className="kpi-icon">🤝</div>
-                      <div className="kpi-label">Частка взаємодій</div>
-                      <div className="kpi-value">{fmtPct(overview.site.engagement_rate)}</div>
-                    </div>
+                    {[
+                      ['👥', 'Трафік', fmtNum(overview.site.total_traffic)],
+                      ['💰', 'Ціна 1 користувача', overview.site.cost_per_user?.toFixed(2) + ' ₴'],
+                      ['🛒', 'Кошик → Покупка', fmtPct(overview.site.cart_to_purchase_rate)],
+                      ['📈', 'Конверсія трафіку', fmtPct(overview.site.traffic_conversion_rate)],
+                      ['⏱', 'Час на сайті', overview.site.avg_session_duration + 'с'],
+                      ['🤝', 'Частка взаємодій', fmtPct(overview.site.engagement_rate)],
+                    ].map(([icon, label, value], i) => (
+                      <div key={i} className="kpi-card">
+                        <div className="kpi-icon">{icon}</div>
+                        <div className="kpi-label">{label}</div>
+                        <div className="kpi-value">{value}</div>
+                      </div>
+                    ))}
                   </div>
                 ) : (
                   <div style={{ padding: '24px', color: 'var(--text-muted)', textAlign: 'center' }}>
                     Дані сайту ще не завантажені. Натисніть «Sync з Sheets» для оновлення.
                   </div>
                 )}
-              </div>
-            )}
-
-            {/* CAC & New Clients trend */}
-            {activeTab === 'overview' && (
-              <div className="charts-grid">
-                <div className="card chart-card">
-                  <div className="card-title">🎯 CAC (вартість залучення) по тижнях</div>
-                  <ResponsiveContainer width="100%" height={260}>
-                    <AreaChart data={weeklyData}>
-                      <defs>
-                        <linearGradient id="cacGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#EF4444" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#EF4444" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                      <XAxis dataKey="week_label" tick={{ fill: '#64748B', fontSize: 11 }} />
-                      <YAxis tick={{ fill: '#64748B', fontSize: 11 }} />
-                      <Tooltip content={<ChartTooltip formatter={fmtCurrency} />} />
-                      <Area type="monotone" dataKey="cac" name="CAC" stroke="#EF4444" strokeWidth={2} fill="url(#cacGrad)" dot={{ r: 3 }} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="card chart-card">
-                  <div className="card-title">👤 Нові клієнти по тижнях</div>
-                  <ResponsiveContainer width="100%" height={260}>
-                    <BarChart data={weeklyData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                      <XAxis dataKey="week_label" tick={{ fill: '#64748B', fontSize: 11 }} />
-                      <YAxis tick={{ fill: '#64748B', fontSize: 11 }} />
-                      <Tooltip content={<ChartTooltip />} />
-                      <Bar dataKey="new_clients" name="Нові клієнти" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
               </div>
             )}
           </>

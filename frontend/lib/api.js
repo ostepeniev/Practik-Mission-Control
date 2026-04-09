@@ -100,11 +100,21 @@ class ApiClient {
   toggleWidget(id, visible) { return this.patch(`/api/admin/widgets/${id}`, { is_visible_owner: visible }); }
   getCategories() { return this.get('/api/admin/categories'); }
 
+  // Breakdown (drill-down)
+  getBreakdown(params = {}) { const q = new URLSearchParams(params).toString(); return this.get(`/api/metrics/breakdown${q ? '?'+q : ''}`); }
+
+  // Customers
+  getCustomerAnalytics(params = {}) { const q = new URLSearchParams(params).toString(); return this.get(`/api/customers${q ? '?'+q : ''}`); }
+
+  // AI Pulse
+  getAIPulse(metrics, planFact, period) { return this.post('/api/ai/pulse', { metrics, plan_fact: planFact, period }); }
+
   // Marketing
-  getMarketingOverview() { return this.get('/api/marketing?view=overview'); }
-  getMarketingChannels() { return this.get('/api/marketing?view=channels'); }
+  getMarketingOverview(period) { return this.get(`/api/marketing?view=overview${period ? '&period=' + period : ''}`); }
+  getMarketingChannels(period) { return this.get(`/api/marketing?view=channels${period ? '&period=' + period : ''}`); }
   getMarketingWeeks() { return this.get('/api/marketing?view=weeks'); }
   getMarketingAlerts() { return this.get('/api/marketing?view=alerts'); }
+  getMarketingPeriods() { return this.get('/api/marketing?view=periods'); }
   syncMarketingSheets() { return this.post('/api/marketing/sync', {}); }
 
   // Complaints
