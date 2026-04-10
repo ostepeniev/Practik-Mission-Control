@@ -160,7 +160,7 @@ export default function MarketingPage() {
 
       <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
         <div className="sidebar-logo">
-          <div><h1>🐾 Practik UA</h1><span>Analytics Dashboard</span></div>
+          <div><h1>🐾 Practik UA</h1><span>Mission Control</span></div>
         </div>
         <nav className="sidebar-nav">
           <div className="nav-item" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>📊 Аналітика товарів</div>

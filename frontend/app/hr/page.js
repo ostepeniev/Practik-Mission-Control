@@ -42,7 +42,6 @@ function trendIcon(trend) {
 
 export default function HRPage() {
   const router = useRouter();
-  const navigate = (p) => router.push(p);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
@@ -89,12 +88,26 @@ export default function HRPage() {
 
   const { matrix: hm, maxConflicts } = data ? buildHeatmap(data.heatmap) : { matrix: {}, maxConflicts: 1 };
 
+  function navigate(path) { setSidebarOpen(false); router.push(path); }
+
   return (
     <div className="app-layout">
-      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
-        <div className="sidebar-header">
-          <div className="logo" onClick={() => navigate('/')}>
-            <h1>🐾 Practik UA</h1><span>Analytics Dashboard</span>
+      <header className="mobile-header">
+        <button className={`burger-btn${sidebarOpen ? ' open' : ''}`}
+          onClick={() => setSidebarOpen(o => !o)} aria-label="Меню">
+          <span className="burger-line" /><span className="burger-line" /><span className="burger-line" />
+        </button>
+        <span className="mobile-header-logo">🐾 Practik UA</span>
+        {user.role === 'developer' && <span className="dev-badge">🛠 Dev</span>}
+      </header>
+
+      <div className={`sidebar-overlay${sidebarOpen ? ' visible' : ''}`} onClick={() => setSidebarOpen(false)} />
+
+      <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
+        <div className="sidebar-logo">
+          <div>
+            <h1>🐾 Practik UA</h1>
+            <span>Mission Control</span>
           </div>
         </div>
         <nav className="sidebar-nav">
@@ -117,11 +130,6 @@ export default function HRPage() {
       </aside>
 
       <main className="main-content">
-        <div className="mobile-header">
-          <button className="burger-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>☰</button>
-          <span className="mobile-logo">🐾 Practik UA</span>
-          {user.role === 'developer' && <span className="dev-badge">🛠 DEV</span>}
-        </div>
 
         <div className="page-header">
           <div><h2>👥 HR — Команда та комунікація</h2><p>Sentiment-аналіз дзвінків, конфлікти, AI-коуч</p></div>
@@ -283,7 +291,6 @@ export default function HRPage() {
           </>
         )}
       </main>
-      {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
     </div>
   );
 }
