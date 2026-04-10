@@ -97,7 +97,7 @@ export async function GET(req) {
 
   // ─── Weekly new vs returning — from marketing_sales_data ───────
   const weeklyData = db.prepare(`
-    SELECT week_start as week, new_clients as new, returning_clients as returning,
+    SELECT week_start as week, new_clients as "new", returning_clients as "returning",
            (new_clients + returning_clients) as total
     FROM marketing_sales_data
     ORDER BY week_start
