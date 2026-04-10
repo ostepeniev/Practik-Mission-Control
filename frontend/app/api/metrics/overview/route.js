@@ -58,29 +58,55 @@ export async function GET(req) {
   `).get(dateFrom, dateTo);
   const retPct = calcReturnsPct(retRow.returned, volume);
 
-  // Average check
-  const avgCheck = orderCount > 0 ? revenue / orderCount : 0;
+  // Average check — use marketing data for realistic avg_check
+  const mktAvgCheck = db.prepare(`
+    SELECT AVG(avg_check) as ac FROM marketing_sales_data
+    WHERE week_start >= ? AND week_start <= ?
+  `).get(dateFrom, dateTo);
+  const avgCheck = mktAvgCheck?.ac || (orderCount > 0 ? revenue / orderCount : 0);
 
-  // New vs returning customers
-  const custStats = db.prepare(`
-    SELECT COUNT(DISTINCT o.customer_id) as total_customers
-    FROM core_sales_orders o
-    WHERE o.order_date >= ? AND o.order_date <= ? AND o.status != 'cancelled'
+  // Customers — pull from marketing_sales_data for realistic numbers
+  const mktCust = db.prepare(`
+    SELECT 
+      MAX(total_clients) as total_clients,
+      SUM(new_clients) as new_clients,
+      SUM(returning_clients) as returning_clients
+    FROM marketing_sales_data
+    WHERE week_start >= ? AND week_start <= ?
   `).get(dateFrom, dateTo);
 
-  const newCust = db.prepare(`
-    SELECT COUNT(DISTINCT o.customer_id) as cnt
-    FROM core_sales_orders o
-    WHERE o.order_date >= ? AND o.order_date <= ? AND o.status != 'cancelled'
-      AND o.customer_id NOT IN (
-        SELECT DISTINCT customer_id FROM core_sales_orders
-        WHERE order_date < ? AND status != 'cancelled'
-      )
-  `).get(dateFrom, dateTo, dateFrom);
+  // Fallback to core DB if no marketing data
+  let totalCust, newCustomers, returningCustomers;
+  if (mktCust && mktCust.total_clients) {
+    totalCust = mktCust.total_clients;
+    newCustomers = mktCust.new_clients || 0;
+    returningCustomers = mktCust.returning_clients || 0;
+  } else {
+    const custStats = db.prepare(`
+      SELECT COUNT(DISTINCT o.customer_id) as total_customers
+      FROM core_sales_orders o
+      WHERE o.order_date >= ? AND o.order_date <= ? AND o.status != 'cancelled'
+    `).get(dateFrom, dateTo);
+    const newCust = db.prepare(`
+      SELECT COUNT(DISTINCT o.customer_id) as cnt
+      FROM core_sales_orders o
+      WHERE o.order_date >= ? AND o.order_date <= ? AND o.status != 'cancelled'
+        AND o.customer_id NOT IN (
+          SELECT DISTINCT customer_id FROM core_sales_orders
+          WHERE order_date < ? AND status != 'cancelled'
+        )
+    `).get(dateFrom, dateTo, dateFrom);
+    totalCust = custStats.total_customers || 0;
+    newCustomers = newCust.cnt || 0;
+    returningCustomers = totalCust - newCustomers;
+  }
 
-  const totalCust = custStats.total_customers || 0;
-  const newCustomers = newCust.cnt || 0;
-  const returningCustomers = totalCust - newCustomers;
+  // Complaints count
+  const complaintRow = db.prepare(`
+    SELECT COUNT(*) as cnt FROM core_complaints
+    WHERE complaint_date >= ? AND complaint_date <= ?
+  `).get(dateFrom, dateTo);
+  const complaintsCount = complaintRow?.cnt || 0;
 
   // Previous period
   const daysDiff = Math.ceil((new Date(dateTo) - new Date(dateFrom)) / 86400000) + 1;
@@ -109,12 +135,19 @@ export async function GET(req) {
   const prevMarginAmt = grossMarginAmount(prevRevenue, prev.cogs);
   const prevAvgCheck = prev.order_count > 0 ? prevRevenue / prev.order_count : 0;
 
-  // Plan/Fact — monthly targets (realistic for a pet food company)
+  // Plan/Fact — monthly targets based on marketing data
+  // Real scale: ~5.5M/week revenue → ~24M/month, ~4000 orders/week → ~16000/month
+  const mktPlanData = db.prepare(`
+    SELECT 
+      AVG(incoming_orders_sum) as avg_weekly_rev,
+      AVG(incoming_orders) as avg_weekly_orders
+    FROM marketing_sales_data
+  `).get();
+
   const plan = {
-    revenue: 3200000,
+    revenue: round((mktPlanData?.avg_weekly_rev || 5500000) * 4.33),  // weekly avg * 4.33 weeks
     margin_pct: 35.0,
-    orders: 350,
-    new_customers: 5,
+    orders: round((mktPlanData?.avg_weekly_orders || 4000) * 4.33),
   };
 
   // Scale plan proportionally if period != full month
@@ -122,10 +155,20 @@ export async function GET(req) {
   const periodDays = daysDiff;
   const planScale = Math.min(periodDays / daysInMonth, 1);
 
+  // Use marketing revenue for plan/fact when available
+  const mktRevForPeriod = db.prepare(`
+    SELECT COALESCE(SUM(incoming_orders_sum), 0) as rev,
+           COALESCE(SUM(incoming_orders), 0) as orders
+    FROM marketing_sales_data
+    WHERE week_start >= ? AND week_start <= ?
+  `).get(dateFrom, dateTo);
+  const factRevenue = mktRevForPeriod?.rev > 0 ? mktRevForPeriod.rev : revenue;
+  const factOrders = mktRevForPeriod?.orders > 0 ? mktRevForPeriod.orders : orderCount;
+
   const planFact = {
-    revenue: { plan: round(plan.revenue * planScale), fact: round(revenue), pct: plan.revenue * planScale > 0 ? round(revenue / (plan.revenue * planScale) * 100, 1) : 0 },
+    revenue: { plan: round(plan.revenue * planScale), fact: round(factRevenue), pct: plan.revenue * planScale > 0 ? round(factRevenue / (plan.revenue * planScale) * 100, 1) : 0 },
     margin_pct: { plan: plan.margin_pct, fact: round(marginPct, 1), pct: plan.margin_pct > 0 ? round(marginPct / plan.margin_pct * 100, 1) : 0 },
-    orders: { plan: round(plan.orders * planScale), fact: orderCount, pct: plan.orders * planScale > 0 ? round(orderCount / (plan.orders * planScale) * 100, 1) : 0 },
+    orders: { plan: round(plan.orders * planScale), fact: factOrders, pct: plan.orders * planScale > 0 ? round(factOrders / (plan.orders * planScale) * 100, 1) : 0 },
   };
 
   return NextResponse.json({
@@ -161,7 +204,10 @@ export async function GET(req) {
       },
       customers: {
         total: totalCust, new: newCustomers, returning: returningCustomers,
-        returning_pct: totalCust > 0 ? round(returningCustomers / totalCust * 100, 1) : 0,
+        returning_pct: (newCustomers + returningCustomers) > 0 ? round(returningCustomers / (newCustomers + returningCustomers) * 100, 1) : 0,
+      },
+      complaints: {
+        value: complaintsCount, format: 'number', unit: 'шт',
       },
     },
     plan_fact: planFact,

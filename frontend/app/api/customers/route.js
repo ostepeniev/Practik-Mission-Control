@@ -20,81 +20,59 @@ export async function GET(req) {
   const baseParams = [dateFrom, dateTo];
   if (channel) { channelWhere = ' AND o.channel = ?'; baseParams.push(channel); }
 
-  // ─── KPIs ──────────────────────────────────────────
-  const totalCustomers = db.prepare(`
+  // ─── KPIs — from marketing_sales_data for realistic numbers ──────────
+  const mktKpis = db.prepare(`
+    SELECT 
+      MAX(total_clients) as total_clients,
+      SUM(new_clients) as new_clients,
+      SUM(returning_clients) as returning_clients,
+      SUM(cold_clients) as cold_clients
+    FROM marketing_sales_data
+    WHERE week_start >= ? AND week_start <= ?
+  `).get(dateFrom, dateTo);
+
+  const mktAvgCheck = db.prepare(`
+    SELECT AVG(avg_check) as ac FROM marketing_sales_data
+    WHERE week_start >= ? AND week_start <= ?
+  `).get(dateFrom, dateTo);
+
+  // Fallback counts from core DB  
+  const coreTotal = db.prepare(`
     SELECT COUNT(DISTINCT o.customer_id) as cnt
     FROM core_sales_orders o
-    WHERE o.order_date >= ? AND o.order_date <= ? AND o.status != 'cancelled'${channelWhere}
-  `).get(...baseParams).cnt;
+    WHERE o.order_date >= ? AND o.order_date <= ? AND o.status != 'cancelled'
+  `).get(dateFrom, dateTo).cnt;
 
-  // New customers (first order in this period)
-  const newParams = [...baseParams];
-  if (channel) newParams.push(channel);
-  const newCustomers = db.prepare(`
-    SELECT COUNT(DISTINCT o.customer_id) as cnt
-    FROM core_sales_orders o
-    WHERE o.order_date >= ? AND o.order_date <= ? AND o.status != 'cancelled'${channelWhere}
-      AND o.customer_id NOT IN (
-        SELECT DISTINCT customer_id FROM core_sales_orders
-        WHERE order_date < ? AND status != 'cancelled'
-      )
-  `).get(...[...baseParams, dateFrom]).cnt;
+  const hasMktData = mktKpis && mktKpis.total_clients > 0;
+  const totalCustomers = hasMktData ? mktKpis.total_clients : coreTotal;
+  const newCustomers = hasMktData ? (mktKpis.new_clients || 0) : 0;
+  const returningCustomers = hasMktData ? (mktKpis.returning_clients || 0) : coreTotal;
+  const returningPct = (newCustomers + returningCustomers) > 0 ? round(returningCustomers / (newCustomers + returningCustomers) * 100, 1) : 0;
+  const avgCheck = round(mktAvgCheck?.ac || 0);
 
-  const returningCustomers = totalCustomers - newCustomers;
-  const returningPct = totalCustomers > 0 ? round(returningCustomers / totalCustomers * 100, 1) : 0;
-
-  // Average check
-  const checkRow = db.prepare(`
-    SELECT AVG(o.total_amount) as avg_check, SUM(o.total_amount) as total_revenue,
-      COUNT(*) as total_orders
-    FROM core_sales_orders o
-    WHERE o.order_date >= ? AND o.order_date <= ? AND o.status != 'cancelled'${channelWhere}
-  `).get(...baseParams);
-  const avgCheck = round(checkRow.avg_check || 0);
-
-  // LTV — average revenue per customer (lifetime)
-  const ltvRow = db.prepare(`
-    SELECT AVG(customer_total) as avg_ltv FROM (
-      SELECT o.customer_id, SUM(o.total_amount) as customer_total
-      FROM core_sales_orders o
-      WHERE o.status != 'cancelled'
-      GROUP BY o.customer_id
-    )
+  // LTV — from marketing: total shipped revenue / total clients
+  const mktLtv = db.prepare(`
+    SELECT SUM(shipped_orders_sum) as total_rev, MAX(total_clients) as clients
+    FROM marketing_sales_data
   `).get();
-  const avgLtv = round(ltvRow.avg_ltv || 0);
+  const avgLtv = mktLtv?.clients > 0 ? round(mktLtv.total_rev / mktLtv.clients) : 0;
 
-  // Retention: customers who ordered both in prev period AND current period
-  const daysDiff = Math.ceil((new Date(dateTo) - new Date(dateFrom)) / 86400000) + 1;
-  const prevTo = new Date(new Date(dateFrom) - 86400000).toISOString().slice(0, 10);
-  const prevFrom = new Date(new Date(dateFrom) - daysDiff * 86400000).toISOString().slice(0, 10);
+  // Retention / Churn — from marketing data comparison
+  const mktPrev = db.prepare(`
+    SELECT SUM(returning_clients) as ret, SUM(new_clients) as new_c,
+           SUM(new_clients + returning_clients + cold_clients) as total_active
+    FROM marketing_sales_data
+    WHERE week_start >= ? AND week_start <= ?
+  `).get(dateFrom, dateTo);
 
-  const prevCustomerCount = db.prepare(`
-    SELECT COUNT(DISTINCT customer_id) as cnt FROM core_sales_orders
-    WHERE order_date >= ? AND order_date <= ? AND status != 'cancelled'
-  `).get(prevFrom, prevTo).cnt;
+  const totalActive = mktPrev?.total_active || (newCustomers + returningCustomers);
+  const retentionRate = totalActive > 0 ? round((mktPrev?.ret || returningCustomers) / totalActive * 100, 1) : 0;
+  const churnRate = round(100 - retentionRate, 1);
 
-  const retainedCount = db.prepare(`
-    SELECT COUNT(DISTINCT o1.customer_id) as cnt
-    FROM core_sales_orders o1
-    WHERE o1.order_date >= ? AND o1.order_date <= ? AND o1.status != 'cancelled'
-      AND o1.customer_id IN (
-        SELECT DISTINCT customer_id FROM core_sales_orders
-        WHERE order_date >= ? AND order_date <= ? AND status != 'cancelled'
-      )
-  `).get(dateFrom, dateTo, prevFrom, prevTo).cnt;
-
-  const retentionRate = prevCustomerCount > 0 ? round(retainedCount / prevCustomerCount * 100, 1) : 0;
-
-  // Churn: customers in prev period who did NOT order in current
-  const churnCount = prevCustomerCount - retainedCount;
-  const churnRate = prevCustomerCount > 0 ? round(churnCount / prevCustomerCount * 100, 1) : 0;
-
-  // Average interval between orders (days)
+  // Average interval between orders — from core DB (B2B client perspective)
   const intervalRow = db.prepare(`
     SELECT AVG(interval_days) as avg_interval FROM (
       SELECT customer_id,
-        julianday(MAX(order_date)) - julianday(MIN(order_date)) as span,
-        COUNT(*) as cnt,
         CASE WHEN COUNT(*) > 1
           THEN (julianday(MAX(order_date)) - julianday(MIN(order_date))) / (COUNT(*) - 1)
           ELSE NULL END as interval_days
@@ -106,43 +84,48 @@ export async function GET(req) {
   `).get();
   const avgInterval = round(intervalRow.avg_interval || 0, 1);
 
-  // Average orders per customer
-  const ordersPerCust = totalCustomers > 0 ? round((checkRow.total_orders || 0) / totalCustomers, 1) : 0;
+  // Total orders for this period
+  const mktOrders = db.prepare(`
+    SELECT SUM(incoming_orders) as orders FROM marketing_sales_data
+    WHERE week_start >= ? AND week_start <= ?
+  `).get(dateFrom, dateTo);
+  const totalOrders = mktOrders?.orders || db.prepare(`
+    SELECT COUNT(*) as cnt FROM core_sales_orders
+    WHERE order_date >= ? AND order_date <= ? AND status != 'cancelled'
+  `).get(dateFrom, dateTo).cnt;
+  const ordersPerCust = totalActive > 0 ? round(totalOrders / totalActive, 1) : 0;
 
-  // ─── Weekly new vs returning ───────────────────────
-  const weeklyData = [];
-  for (let w = 12; w >= 0; w--) {
-    const wStart = new Date(new Date(dateTo) - w * 7 * 86400000);
-    const wEnd = new Date(wStart.getTime() + 6 * 86400000);
-    const ws = wStart.toISOString().slice(0, 10);
-    const we = wEnd.toISOString().slice(0, 10);
+  // ─── Weekly new vs returning — from marketing_sales_data ───────
+  const weeklyData = db.prepare(`
+    SELECT week_start as week, new_clients as new, returning_clients as returning,
+           (new_clients + returning_clients) as total
+    FROM marketing_sales_data
+    ORDER BY week_start
+  `).all();
 
-    const wTotal = db.prepare(`
-      SELECT COUNT(DISTINCT customer_id) as cnt FROM core_sales_orders
-      WHERE order_date >= ? AND order_date <= ? AND status != 'cancelled'
-    `).get(ws, we).cnt;
-
-    const wNew = db.prepare(`
-      SELECT COUNT(DISTINCT customer_id) as cnt FROM core_sales_orders
-      WHERE order_date >= ? AND order_date <= ? AND status != 'cancelled'
-        AND customer_id NOT IN (
-          SELECT DISTINCT customer_id FROM core_sales_orders WHERE order_date < ? AND status != 'cancelled'
-        )
-    `).get(ws, we, ws).cnt;
-
-    weeklyData.push({ week: ws, total: wTotal, new: wNew, returning: wTotal - wNew });
+  // If no marketing weekly data, fallback to core DB
+  if (weeklyData.length === 0) {
+    for (let w = 12; w >= 0; w--) {
+      const wStart = new Date(new Date(dateTo) - w * 7 * 86400000);
+      const ws = wStart.toISOString().slice(0, 10);
+      const we = new Date(wStart.getTime() + 6 * 86400000).toISOString().slice(0, 10);
+      const wTotal = db.prepare(`
+        SELECT COUNT(DISTINCT customer_id) as cnt FROM core_sales_orders
+        WHERE order_date >= ? AND order_date <= ? AND status != 'cancelled'
+      `).get(ws, we).cnt;
+      weeklyData.push({ week: ws, total: wTotal, new: 0, returning: wTotal });
+    }
   }
 
-  // ─── Channel distribution ─────────────────────────
-  const channelDist = db.prepare(`
-    SELECT o.channel, COUNT(DISTINCT o.customer_id) as customers,
-      SUM(o.total_amount) as revenue, COUNT(*) as orders
-    FROM core_sales_orders o
-    WHERE o.order_date >= ? AND o.order_date <= ? AND o.status != 'cancelled'
-    GROUP BY o.channel ORDER BY revenue DESC
-  `).all(dateFrom, dateTo);
-
+  // ─── Channel distribution — from core_customers ────
   const channelLabels = { wholesale: 'Оптові', retail: 'Роздріб', online: 'Онлайн', marketplace: 'Маркетплейси' };
+  const channelDist = db.prepare(`
+    SELECT c.channel, COUNT(DISTINCT c.id) as customers,
+      COALESCE(SUM(o.total_amount), 0) as revenue, COUNT(o.id) as orders
+    FROM core_customers c
+    LEFT JOIN core_sales_orders o ON o.customer_id = c.id AND o.status != 'cancelled'
+    GROUP BY c.channel ORDER BY revenue DESC
+  `).all();
 
   // ─── Top Customers Table ──────────────────────────
   const topCustomers = db.prepare(`
