@@ -188,7 +188,7 @@ export default function ComplaintsPage() {
         <div className="sidebar-logo">
           <div>
             <h1>🐾 Practik UA</h1>
-            <span>Analytics Dashboard</span>
+            <span>Mission Control</span>
           </div>
         </div>
         <nav className="sidebar-nav">
