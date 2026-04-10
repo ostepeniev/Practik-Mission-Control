@@ -171,27 +171,30 @@ export async function GET(req) {
     orders: { plan: round(plan.orders * planScale), fact: factOrders, pct: plan.orders * planScale > 0 ? round(factOrders / (plan.orders * planScale) * 100, 1) : 0 },
   };
 
+  // Cap deltas to avoid unrealistic numbers when prev period has near-zero data
+  function capDelta(v) { return v == null ? 0 : Math.max(-200, Math.min(200, v)); }
+
   return NextResponse.json({
     period: { from: dateFrom, to: dateTo },
     metrics: {
       revenue_mtd: {
-        value: round(revenue), delta_pct: round(deltaPct(revenue, prevRevenue), 1),
+        value: round(revenue), delta_pct: capDelta(round(deltaPct(revenue, prevRevenue), 1)),
         prev_value: round(prevRevenue), format: 'currency', unit: '₴',
       },
       gross_margin_pct: {
-        value: round(marginPct, 1), delta_pct: round(deltaPP(marginPct, prevMargin), 1),
+        value: round(marginPct, 1), delta_pct: capDelta(round(deltaPP(marginPct, prevMargin), 1)),
         prev_value: round(prevMargin, 1), format: 'percent', unit: '%',
       },
       gross_margin_amount: {
-        value: round(marginAmt), delta_pct: round(deltaPct(marginAmt, prevMarginAmt), 1),
+        value: round(marginAmt), delta_pct: capDelta(round(deltaPct(marginAmt, prevMarginAmt), 1)),
         prev_value: round(prevMarginAmt), format: 'currency', unit: '₴',
       },
       sales_volume: {
-        value: round(volume, 1), delta_pct: round(deltaPct(volume, prev.volume), 1),
+        value: round(volume, 1), delta_pct: capDelta(round(deltaPct(volume, prev.volume), 1)),
         prev_value: round(prev.volume, 1), format: 'number', unit: 'кг',
       },
       order_count: {
-        value: orderCount, delta_pct: round(deltaPct(orderCount, prev.order_count), 1),
+        value: orderCount, delta_pct: capDelta(round(deltaPct(orderCount, prev.order_count), 1)),
         prev_value: prev.order_count, format: 'number', unit: 'шт',
       },
       returns_pct: {
@@ -199,7 +202,7 @@ export async function GET(req) {
         format: 'percent', unit: '%', inverse: true,
       },
       avg_check: {
-        value: round(avgCheck), delta_pct: round(deltaPct(avgCheck, prevAvgCheck), 1),
+        value: round(avgCheck), delta_pct: capDelta(round(deltaPct(avgCheck, prevAvgCheck), 1)),
         prev_value: round(prevAvgCheck), format: 'currency', unit: '₴',
       },
       customers: {
